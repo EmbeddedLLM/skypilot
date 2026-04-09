@@ -3730,9 +3730,10 @@ def get_node_accelerator_count(context: Optional[str],
     gpu_resource_name = get_gpu_resource_key(context)
     assert not (gpu_resource_name in attribute_dict and
                 TPU_RESOURCE_KEY in attribute_dict)
-    if gpu_resource_name in attribute_dict:
-        return int(attribute_dict[gpu_resource_name])
-    elif TPU_RESOURCE_KEY in attribute_dict:
+    for gpu_resource in ["nvidia.com/gpu", "amd.com/gpu"]:
+        if gpu_resource in attribute_dict:
+            return int(attribute_dict[gpu_resource])
+    if TPU_RESOURCE_KEY in attribute_dict:
         return int(attribute_dict[TPU_RESOURCE_KEY])
     return 0
 
