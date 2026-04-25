@@ -10,7 +10,7 @@
 <table>
   <tr><td><b>Upstream version</b></td><td><code>0.12.0</code></td></tr>
   <tr><td><b>Branch</b></td><td><code>ellm-0.12.0</code></td></tr>
-  <tr><td><b>Image</b></td><td><code>ghcr.io/embeddedllm/skypilot:0.12.0</code></td></tr>
+  <tr><td><b>Image</b></td><td><code>ghcr.io/embeddedllm/skypilot:v0.12.0</code></td></tr>
   <tr><td><b>Upstream repo</b></td><td><a href="https://github.com/skypilot-org/skypilot">skypilot-org/skypilot</a></td></tr>
 </table>
 
@@ -21,8 +21,8 @@
     <tr><th>Tag</th><th>Meaning</th></tr>
   </thead>
   <tbody>
-    <tr><td><code>0.12.0</code></td><td>Stable, production-ready build based on upstream 0.12.0</td></tr>
-    <tr><td><code>0.12.0-dev</code></td><td>Development build off <code>ellm-0.12.0</code> branch, not yet stable</td></tr>
+    <tr><td><code>v0.12.0</code></td><td>Stable, production-ready build based on upstream v0.12.0</td></tr>
+    <tr><td><code>v0.12.0-dev</code></td><td>Development build off <code>ellm-0.12.0</code> branch, not yet stable</td></tr>
   </tbody>
 </table>
 
@@ -88,14 +88,14 @@ gh pr create --base ellm-0.12.0 --title "..." --body "..."
 
 Build and push a dev image to test before merging:
 ```bash
-docker build -t ghcr.io/embeddedllm/skypilot:0.12.0-dev .
-docker push ghcr.io/embeddedllm/skypilot:0.12.0-dev
+docker build -t ghcr.io/embeddedllm/skypilot:v0.12.0-dev .
+docker push ghcr.io/embeddedllm/skypilot:v0.12.0-dev
 ```
 
 Once the PR is merged and validated, promote to stable:
 ```bash
-docker tag ghcr.io/embeddedllm/skypilot:0.12.0-dev ghcr.io/embeddedllm/skypilot:0.12.0
-docker push ghcr.io/embeddedllm/skypilot:0.12.0
+docker tag ghcr.io/embeddedllm/skypilot:v0.12.0-dev ghcr.io/embeddedllm/skypilot:v0.12.0
+docker push ghcr.io/embeddedllm/skypilot:v0.12.0
 ```
 
 <h3>⬆️ Updating to a New Upstream Version</h3>
@@ -121,7 +121,7 @@ git cherry-pick f3b4561  # Fix podip endpoint in HA mode
 git push origin ellm-{new_version}
 ```
 
-> After creating the new branch, update this README: bump **Upstream version**, **Branch**, **Image**, and the commit hashes in the patch table. Build and push the new image as `ghcr.io/embeddedllm/skypilot:{new_version}`.
+> After creating the new branch, update this README: bump **Upstream version**, **Branch**, **Image**, and the commit hashes in the patch table. Build and push the new image as `ghcr.io/embeddedllm/skypilot:v{new_version}`.
 
 ---
 
