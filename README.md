@@ -22,10 +22,7 @@
   </thead>
   <tbody>
     <tr><td><code>0.12.0</code></td><td>Stable, production-ready build based on upstream 0.12.0</td></tr>
-    <tr><td><code>0.12.0-patch.1</code></td><td>Hotfix on top of a stable release</td></tr>
     <tr><td><code>0.12.0-dev</code></td><td>Development build off <code>ellm-0.12.0</code> branch, not yet stable</td></tr>
-    <tr><td><code>latest</code></td><td>Always points to the latest stable build (never dev)</td></tr>
-    <tr><td><code>dev</code></td><td>Always points to the latest dev build</td></tr>
   </tbody>
 </table>
 
