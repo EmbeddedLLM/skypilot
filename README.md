@@ -14,17 +14,25 @@
   <tr><td><b>Upstream repo</b></td><td><a href="https://github.com/skypilot-org/skypilot">skypilot-org/skypilot</a></td></tr>
 </table>
 
-<h3>🐳 Image Tags</h3>
+<h3>🐳 Image</h3>
 
 <table>
   <thead>
-    <tr><th>Tag</th><th>Meaning</th></tr>
+    <tr><th>Tag</th><th>Image</th><th>Meaning</th></tr>
   </thead>
   <tbody>
-    <tr><td><code>0.12.0</code></td><td>Stable, production-ready build based on upstream 0.12.0</td></tr>
-    <tr><td><code>0.12.0-dev</code></td><td>Development build off <code>ellm-0.12.0</code> branch, not yet stable</td></tr>
+    <tr><td><code>0.12.0</code></td><td><code>ghcr.io/embeddedllm/skypilot:0.12.0</code></td><td>Stable, production-ready build based on upstream 0.12.0</td></tr>
+    <tr><td><code>0.12.0-dev</code></td><td><code>ghcr.io/embeddedllm/skypilot:0.12.0-dev</code></td><td>Development build off <code>ellm-0.12.0</code> branch, not yet stable</td></tr>
   </tbody>
 </table>
+
+```bash
+# Pull stable
+docker pull ghcr.io/embeddedllm/skypilot:0.12.0
+
+# Pull dev
+docker pull ghcr.io/embeddedllm/skypilot:0.12.0-dev
+```
 
 <h3>🔧 Custom Patches</h3>
 
