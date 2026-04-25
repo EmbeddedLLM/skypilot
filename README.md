@@ -12,11 +12,29 @@
 > | `[Kubernetes] Fix podip endpoint in HA mode` | `f3b4561` | `sky/provision/kubernetes/network.py` | Fixes `http://None` endpoint when using `high_availability` + `podip` port mode for sky-serve-controller. Pod lookup now uses label selectors instead of pod name, supporting Deployment-managed pods whose names have random suffixes. |
 >
 > **Updating to a new upstream version**
+>
+> Each upstream version gets its own branch (`ellm-0.12.0`, `ellm-0.13.0`, ...). Old branches are kept as history/rollback points.
+>
 > ```bash
-> git checkout master && git fetch upstream && git merge upstream/master && git push origin master
-> git checkout ellm-0.12.0 && git rebase upstream/master
-> git push origin ellm-{new_version} --force-with-lease
+> # 1. Sync master with upstream
+> git checkout master
+> git fetch upstream
+> git merge upstream/master
+> git push origin master
+>
+> # 2. Create new branch from updated master
+> git checkout -b ellm-{new_version}
+>
+> # 3. Cherry-pick custom patches from the previous branch (use commit hashes from the patch table above)
+> git cherry-pick 493fb1f  # Enable dual GPU in a single API server
+> git cherry-pick f3b4561  # Fix podip endpoint in HA mode
+> # Resolve any conflicts if upstream changed the same files
+>
+> # 4. Push new branch
+> git push origin ellm-{new_version}
 > ```
+>
+> Then update the README on the new branch: bump **Upstream version**, **Branch**, and patch commit hashes in the table above.
 >
 > ---
 
