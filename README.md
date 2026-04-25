@@ -1,3 +1,24 @@
+> **EmbeddedLLM Fork** — This is a downstream fork of [skypilot-org/skypilot](https://github.com/skypilot-org/skypilot) maintained by [EmbeddedLLM](https://github.com/EmbeddedLLM).
+>
+> | | |
+> |---|---|
+> | **Upstream version** | `0.12.0` |
+> | **Branch** | `ellm-0.12.0` |
+>
+> **Custom Patches**
+> | Patch | Description |
+> |---|---|
+> | `[Kubernetes] Fix podip endpoint in HA mode` | Fixes `http://None` endpoint when using `high_availability` + `podip` port mode for sky-serve-controller. Pod lookup now uses label selectors instead of pod name, supporting Deployment-managed pods whose names have random suffixes. |
+>
+> **Updating to a new upstream version**
+> ```bash
+> git checkout master && git fetch upstream && git merge upstream/master && git push origin master
+> git checkout ellm-0.12.0 && git rebase upstream/master
+> git push origin ellm-{new_version} --force-with-lease
+> ```
+>
+> ---
+
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/skypilot-org/skypilot/master/docs/source/images/skypilot-wide-dark-1k.png">
