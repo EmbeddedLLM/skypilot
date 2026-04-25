@@ -98,6 +98,20 @@ docker tag ghcr.io/embeddedllm/skypilot:v0.12.0-dev ghcr.io/embeddedllm/skypilot
 docker push ghcr.io/embeddedllm/skypilot:v0.12.0
 ```
 
+**Deploying with Helm**
+
+The Helm chart is pinned to the same upstream version. Always specify `--version` explicitly:
+```bash
+helm upgrade --install $RELEASE_NAME skypilot/skypilot \
+  --version 0.12.0 \
+  --namespace $NAMESPACE \
+  --create-namespace \
+  --set apiService.image=ghcr.io/embeddedllm/skypilot:v0.12.0 \
+  --set ingress.authCredentials=$AUTH_STRING
+```
+
+> When moving to a new upstream version (e.g. `v0.13.0`), update **both** `--version` and `--set apiService.image` together. The Helm chart version must always match the image version.
+
 <h3>⬆️ Updating to a New Upstream Version</h3>
 
 Each upstream version gets its own branch (`ellm-0.12.0`, `ellm-0.13.0`, ...). Old branches are kept as rollback points.
