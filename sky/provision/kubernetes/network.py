@@ -321,8 +321,21 @@ def _query_ports_for_podip(
     namespace = provider_config.get(
         'namespace',
         kubernetes_utils.get_kube_config_context_namespace(context))
-    pod_name = kubernetes_utils.get_head_pod_name(cluster_name_on_cloud)
-    pod_ip = network_utils.get_pod_ip(context, namespace, pod_name)
+    # Use label selectors instead of pod name to find the head pod. In HA mode,
+    # pods are managed by a Deployment and Kubernetes assigns random name suffixes
+    # (e.g. {deployment}-{rs_hash}-{pod_hash}), so the expected
+    # '{cluster_name_on_cloud}-head' pod name does not exist.
+    tag_filters = {
+        provision_constants.TAG_RAY_CLUSTER_NAME: cluster_name_on_cloud,
+        **provision_constants.HEAD_NODE_TAGS,
+    }
+    head_pods = kubernetes_utils.filter_pods(namespace, context, tag_filters,
+                                             status_filters=['Running', 'Pending'])
+    pod_ip = None
+    for pod in head_pods.values():
+        if pod.status.pod_ip is not None:
+            pod_ip = pod.status.pod_ip
+            break
 
     result: Dict[int, List[common.Endpoint]] = {}
     if pod_ip is None:
