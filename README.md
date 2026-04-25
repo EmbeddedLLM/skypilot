@@ -1,42 +1,88 @@
-> **EmbeddedLLM Fork** — This is a downstream fork of [skypilot-org/skypilot](https://github.com/skypilot-org/skypilot) maintained by [EmbeddedLLM](https://github.com/EmbeddedLLM).
->
-> | | |
-> |---|---|
-> | **Upstream version** | `0.12.0` |
-> | **Branch** | `ellm-0.12.0` |
->
-> **Custom Patches**
-> | Patch | Commit | Files | Description |
-> |---|---|---|---|
-> | `Enable dual GPU in a single API server` | `493fb1f` | `sky/clouds/kubernetes.py`<br>`sky/provision/kubernetes/utils.py` | Allows a single Kubernetes API server to schedule workloads across nodes with different GPU types (e.g. NVIDIA + AMD). GPU resource key is resolved per-node from `skypilot.co/gpu` node labels instead of a single cluster-wide key. `get_node_accelerator_count` checks both `nvidia.com/gpu` and `amd.com/gpu` resource keys. |
-> | `[Kubernetes] Fix podip endpoint in HA mode` | `f3b4561` | `sky/provision/kubernetes/network.py` | Fixes `http://None` endpoint when using `high_availability` + `podip` port mode for sky-serve-controller. Pod lookup now uses label selectors instead of pod name, supporting Deployment-managed pods whose names have random suffixes. |
->
-> **Updating to a new upstream version**
->
-> Each upstream version gets its own branch (`ellm-0.12.0`, `ellm-0.13.0`, ...). Old branches are kept as history/rollback points.
->
-> ```bash
-> # 1. Sync master with upstream
-> git checkout master
-> git fetch upstream
-> git merge upstream/master
-> git push origin master
->
-> # 2. Create new branch from updated master
-> git checkout -b ellm-{new_version}
->
-> # 3. Cherry-pick custom patches from the previous branch (use commit hashes from the patch table above)
-> git cherry-pick 493fb1f  # Enable dual GPU in a single API server
-> git cherry-pick f3b4561  # Fix podip endpoint in HA mode
-> # Resolve any conflicts if upstream changed the same files
->
-> # 4. Push new branch
-> git push origin ellm-{new_version}
-> ```
->
-> Then update the README on the new branch: bump **Upstream version**, **Branch**, and patch commit hashes in the table above.
->
-> ---
+---
+
+<h2>🍴 EmbeddedLLM Fork</h2>
+
+<p>
+  This is a downstream fork of <a href="https://github.com/skypilot-org/skypilot">skypilot-org/skypilot</a> maintained by <a href="https://github.com/EmbeddedLLM">EmbeddedLLM</a>.
+  It tracks upstream releases and stacks a small set of custom patches on top.
+</p>
+
+<table>
+  <tr><td><b>Upstream version</b></td><td><code>0.12.0</code></td></tr>
+  <tr><td><b>Branch</b></td><td><code>ellm-0.12.0</code></td></tr>
+  <tr><td><b>Upstream repo</b></td><td><a href="https://github.com/skypilot-org/skypilot">skypilot-org/skypilot</a></td></tr>
+</table>
+
+<h3>🔧 Custom Patches</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>Patch</th>
+      <th>Commit</th>
+      <th>Files Changed</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>Enable dual GPU in a single API server</b></td>
+      <td><code>493fb1f</code></td>
+      <td>
+        <code>sky/clouds/kubernetes.py</code><br>
+        <code>sky/provision/kubernetes/utils.py</code>
+      </td>
+      <td>
+        Allows a single Kubernetes API server to schedule workloads across nodes with
+        different GPU types (e.g. NVIDIA + AMD). GPU resource key is resolved per-node
+        from <code>skypilot.co/gpu</code> node labels instead of a single cluster-wide key.
+        <code>get_node_accelerator_count</code> checks both <code>nvidia.com/gpu</code>
+        and <code>amd.com/gpu</code> resource keys.
+      </td>
+    </tr>
+    <tr>
+      <td><b>[Kubernetes] Fix podip endpoint in HA mode</b></td>
+      <td><code>f3b4561</code></td>
+      <td><code>sky/provision/kubernetes/network.py</code></td>
+      <td>
+        Fixes <code>http://None</code> endpoint when using <code>high_availability</code>
+        + <code>podip</code> port mode for sky-serve-controller. In HA mode the controller
+        runs as a Deployment — Kubernetes assigns random pod name suffixes so the expected
+        <code>{cluster_name}-head</code> pod never exists. Fix uses label selectors instead
+        of pod name lookup, working correctly for both HA and non-HA modes.
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>⬆️ Updating to a New Upstream Version</h3>
+
+Each upstream version gets its own branch (`ellm-0.12.0`, `ellm-0.13.0`, ...). Old branches are kept as rollback points.
+
+```bash
+# 1. Sync master with upstream
+git checkout master
+git fetch upstream
+git merge upstream/master
+git push origin master
+
+# 2. Create new branch from updated master
+git checkout -b ellm-{new_version}
+
+# 3. Cherry-pick custom patches (commit hashes from the table above)
+git cherry-pick 493fb1f  # Enable dual GPU in a single API server
+git cherry-pick f3b4561  # Fix podip endpoint in HA mode
+# Resolve any conflicts if upstream changed the same files
+
+# 4. Push new branch
+git push origin ellm-{new_version}
+```
+
+> After creating the new branch, update this README: bump **Upstream version**, **Branch**, and the commit hashes in the patch table.
+
+---
+
+
 
 <p align="center">
   <picture>
