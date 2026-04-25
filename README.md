@@ -10,7 +10,23 @@
 <table>
   <tr><td><b>Upstream version</b></td><td><code>0.12.0</code></td></tr>
   <tr><td><b>Branch</b></td><td><code>ellm-0.12.0</code></td></tr>
+  <tr><td><b>Image</b></td><td><code>ghcr.io/embeddedllm/skypilot:0.12.0</code></td></tr>
   <tr><td><b>Upstream repo</b></td><td><a href="https://github.com/skypilot-org/skypilot">skypilot-org/skypilot</a></td></tr>
+</table>
+
+<h3>🐳 Image Tags</h3>
+
+<table>
+  <thead>
+    <tr><th>Tag</th><th>Meaning</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>0.12.0</code></td><td>Stable, production-ready build based on upstream 0.12.0</td></tr>
+    <tr><td><code>0.12.0-patch.1</code></td><td>Hotfix on top of a stable release</td></tr>
+    <tr><td><code>0.12.0-dev</code></td><td>Development build off <code>ellm-0.12.0</code> branch, not yet stable</td></tr>
+    <tr><td><code>latest</code></td><td>Always points to the latest stable build (never dev)</td></tr>
+    <tr><td><code>dev</code></td><td>Always points to the latest dev build</td></tr>
+  </tbody>
 </table>
 
 <h3>🔧 Custom Patches</h3>
@@ -78,7 +94,7 @@ git cherry-pick f3b4561  # Fix podip endpoint in HA mode
 git push origin ellm-{new_version}
 ```
 
-> After creating the new branch, update this README: bump **Upstream version**, **Branch**, and the commit hashes in the patch table.
+> After creating the new branch, update this README: bump **Upstream version**, **Branch**, **Image**, and the commit hashes in the patch table. Build and push the new image as `ghcr.io/embeddedllm/skypilot:{new_version}`.
 
 ---
 
