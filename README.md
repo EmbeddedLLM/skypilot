@@ -6,9 +6,10 @@
 > | **Branch** | `ellm-0.12.0` |
 >
 > **Custom Patches**
-> | Patch | Description |
-> |---|---|
-> | `[Kubernetes] Fix podip endpoint in HA mode` | Fixes `http://None` endpoint when using `high_availability` + `podip` port mode for sky-serve-controller. Pod lookup now uses label selectors instead of pod name, supporting Deployment-managed pods whose names have random suffixes. |
+> | Patch | Commit | Files | Description |
+> |---|---|---|---|
+> | `Enable dual GPU in a single API server` | `493fb1f` | `sky/clouds/kubernetes.py`<br>`sky/provision/kubernetes/utils.py` | Allows a single Kubernetes API server to schedule workloads across nodes with different GPU types (e.g. NVIDIA + AMD). GPU resource key is resolved per-node from `skypilot.co/gpu` node labels instead of a single cluster-wide key. `get_node_accelerator_count` checks both `nvidia.com/gpu` and `amd.com/gpu` resource keys. |
+> | `[Kubernetes] Fix podip endpoint in HA mode` | `f3b4561` | `sky/provision/kubernetes/network.py` | Fixes `http://None` endpoint when using `high_availability` + `podip` port mode for sky-serve-controller. Pod lookup now uses label selectors instead of pod name, supporting Deployment-managed pods whose names have random suffixes. |
 >
 > **Updating to a new upstream version**
 > ```bash
