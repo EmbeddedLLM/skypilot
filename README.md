@@ -68,6 +68,36 @@
   </tbody>
 </table>
 
+<h3>🛠️ Development Workflow</h3>
+
+Never commit directly to `ellm-{version}`. Create a feature branch off it, then open a PR back into it.
+
+```bash
+# 1. Branch off the active version branch
+git checkout ellm-0.12.0
+git checkout -b feat/my-feature
+
+# 2. Make changes, commit
+git add <files>
+git commit -m "[Area] Description"
+git push origin feat/my-feature
+
+# 3. Open a PR → target ellm-0.12.0 (not master)
+gh pr create --base ellm-0.12.0 --title "..." --body "..."
+```
+
+Build and push a dev image to test before merging:
+```bash
+docker build -t ghcr.io/embeddedllm/skypilot:0.12.0-dev .
+docker push ghcr.io/embeddedllm/skypilot:0.12.0-dev
+```
+
+Once the PR is merged and validated, promote to stable:
+```bash
+docker tag ghcr.io/embeddedllm/skypilot:0.12.0-dev ghcr.io/embeddedllm/skypilot:0.12.0
+docker push ghcr.io/embeddedllm/skypilot:0.12.0
+```
+
 <h3>⬆️ Updating to a New Upstream Version</h3>
 
 Each upstream version gets its own branch (`ellm-0.12.0`, `ellm-0.13.0`, ...). Old branches are kept as rollback points.
