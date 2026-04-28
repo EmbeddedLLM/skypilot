@@ -54,6 +54,32 @@
       </td>
     </tr>
     <tr>
+      <td><b>Automatic AMD GPU detection via device plugin labels</b></td>
+      <td><code>9cd2668</code></td>
+      <td>
+        <code>sky/provision/kubernetes/utils.py</code><br>
+        <code>sky/catalog/kubernetes_catalog.py</code><br>
+        <code>sky/clouds/kubernetes.py</code><br>
+        <code>sky/utils/gpu_names.py</code><br>
+        <code>sky/client/cli/command.py</code>
+      </td>
+      <td>
+        AMD GPU nodes are detected automatically when the
+        <a href="https://github.com/ROCm/k8s-device-plugin">AMD device plugin</a>
+        is installed — no <code>sky gpus label</code> required.
+        Adds <code>AMDGPULabelFormatter</code> which reads
+        <code>amd.com/gpu.product-name[.&lt;GPU&gt;]</code> labels in both
+        single-GPU (name in value) and multi-GPU (name in key suffix) formats.
+        iGPUs/APUs (generic Radeon Graphics, Vega ≤16 CU, mobile NNNm) are filtered
+        at label-match time and never exposed as schedulable resources.
+        All GPU detection code paths — <code>sky gpus list</code>, per-node status,
+        pod scheduling, CPU-only node selection — now iterate all formatters per node,
+        enabling mixed NVIDIA + AMD clusters with no extra configuration.
+        Adds 33 AMD canonical GPU names (MI Instinct CDNA1–4, Radeon Pro W-series,
+        Radeon RX RDNA2/3) to the shared GPU name registry.
+      </td>
+    </tr>
+    <tr>
       <td><b>[Kubernetes] Fix podip endpoint in HA mode</b></td>
       <td><code>f3b4561</code></td>
       <td><code>sky/provision/kubernetes/network.py</code></td>
@@ -88,8 +114,9 @@ gh pr create --base ellm-0.12.0 --title "..." --body "..."
 
 Build and push a dev image to test before merging:
 ```bash
-docker build -t ghcr.io/embeddedllm/skypilot:v0.12.0-dev .
-docker push ghcr.io/embeddedllm/skypilot:v0.12.0-dev
+docker buildx build --push --platform linux/amd64 \
+  -t ghcr.io/embeddedllm/skypilot:v0.12.0-dev \
+  -f Dockerfile .
 ```
 
 Once the PR is merged and validated, promote to stable:
@@ -129,6 +156,7 @@ git checkout -b ellm-{new_version}
 # 3. Cherry-pick custom patches (commit hashes from the table above)
 git cherry-pick 493fb1f  # Enable dual GPU in a single API server
 git cherry-pick f3b4561  # Fix podip endpoint in HA mode
+git cherry-pick 9cd2668  # Automatic AMD GPU detection via device plugin labels
 # Resolve any conflicts if upstream changed the same files
 
 # 4. Push new branch
