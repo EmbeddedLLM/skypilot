@@ -46,11 +46,12 @@
         <code>sky/provision/kubernetes/utils.py</code>
       </td>
       <td>
-        Allows a single Kubernetes API server to schedule workloads across nodes with
-        different GPU types (e.g. NVIDIA + AMD). GPU resource key is resolved per-node
-        from <code>skypilot.co/gpu</code> node labels instead of a single cluster-wide key.
-        <code>get_node_accelerator_count</code> checks both <code>nvidia.com/gpu</code>
-        and <code>amd.com/gpu</code> resource keys.
+        Makes <code>get_node_accelerator_count</code> check both <code>nvidia.com/gpu</code>
+        and <code>amd.com/gpu</code> resource keys so nodes with either vendor GPU report
+        a non-zero accelerator count.<br>
+        <em>Note: the <code>kubernetes.py</code> resource-key selection from this patch
+        was superseded by <code>9cd2668</code>, which derives the resource key from the
+        detected label formatter instead of <code>skypilot.co/gpu</code> node labels.</em>
       </td>
     </tr>
     <tr>
