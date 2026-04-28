@@ -308,17 +308,25 @@ def _raise_pod_scheduling_errors(namespace, context, new_nodes):
                     #  case we will need to update this logic.
                     # TODO(Doyoung): Update the error message raised
                     # with the multi-host TPU support.
-                    gpu_resource_key = kubernetes_utils.get_gpu_resource_key(
-                        context)  # pylint: disable=line-too-long
-                    if ((f'Insufficient {gpu_resource_key}' in event_message) or
+                    # Check all supported GPU resource keys so AMD and
+                    # NVIDIA scheduling failures are both caught.
+                    matched_gpu_key = None
+                    for _rkey in (
+                            kubernetes_utils.SUPPORTED_GPU_RESOURCE_KEYS
+                            .values()):
+                        if f'Insufficient {_rkey}' in event_message:
+                            matched_gpu_key = _rkey
+                            break
+                    if matched_gpu_key is None:
+                        matched_gpu_key = kubernetes_utils.get_gpu_resource_key(
+                            context)
+                    gpu_resource_key = matched_gpu_key
+                    if (f'Insufficient {gpu_resource_key}' in event_message or
                         ('didn\'t match Pod\'s node affinity/selector'
                          in event_message) and pod.spec.node_selector):
-                        if 'gpu' in gpu_resource_key.lower():
-                            info_msg = (
-                                ': Run \'sky gpus list --infra kubernetes\' to '
-                                'see the available GPUs.')
-                        else:
-                            info_msg = ': '
+                        info_msg = (
+                            ': Run \'sky gpus list --infra kubernetes\' to '
+                            'see the available GPUs.')
                         if (pod.spec.node_selector and
                                 label_key in pod.spec.node_selector):
                             extra_msg = (
@@ -1197,11 +1205,17 @@ def _create_pods(region: str, cluster_name: str, cluster_name_on_cloud: str,
 
     needs_gpus = False
     needs_gpus_nvidia = False
+    pod_gpu_resource_key = None
     limits = pod_spec['spec']['containers'][0].get('resources',
                                                    {}).get('limits')
     if limits is not None:
-        needs_gpus = limits.get(kubernetes_utils.get_gpu_resource_key(context),
-                                0) > 0
+        # Check all supported GPU resource keys so AMD and NVIDIA pods are
+        # both detected correctly in a mixed cluster.
+        for _key in kubernetes_utils.SUPPORTED_GPU_RESOURCE_KEYS.values():
+            if limits.get(_key, 0) > 0:
+                needs_gpus = True
+                pod_gpu_resource_key = _key
+                break
         needs_gpus_nvidia = limits.get(
             kubernetes_utils.SUPPORTED_GPU_RESOURCE_KEYS['nvidia'], 0) > 0
 
@@ -1313,7 +1327,8 @@ def _create_pods(region: str, cluster_name: str, cluster_name_on_cloud: str,
         # to the non-DWS case.
         if needs_gpus:
             gpu_toleration = {
-                'key': kubernetes_utils.get_gpu_resource_key(context),
+                'key': pod_gpu_resource_key or
+                       kubernetes_utils.get_gpu_resource_key(context),
                 'operator': 'Exists',
                 'effect': 'NoSchedule'
             }
