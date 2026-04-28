@@ -79,6 +79,24 @@
       </td>
     </tr>
     <tr>
+      <td><b>Fix pod scheduling for mixed NVIDIA + AMD clusters</b></td>
+      <td><code>e9581a9</code></td>
+      <td><code>sky/provision/kubernetes/instance.py</code></td>
+      <td>
+        Fixes pod scheduling and SkyServe replica placement on AMD GPU nodes in
+        a mixed cluster. <code>instance.py</code> previously called
+        <code>get_gpu_resource_key(context)</code> (cluster-wide default) in three places,
+        which returned the wrong vendor key for the non-default GPU type:
+        <ul>
+          <li><b>needs_gpus</b>: AMD pods were seen as not needing GPUs (NVIDIA key missing from AMD pod limits) → nvidia RuntimeClass never skipped, toleration never added</li>
+          <li><b>gpu_toleration</b>: wrong vendor key in pod toleration → pod rejected by AMD node taint</li>
+          <li><b>error messages</b>: wrong resource key shown when scheduling fails</li>
+        </ul>
+        Fix reads the GPU resource key directly from the pod's resource limits and
+        checks all <code>SUPPORTED_GPU_RESOURCE_KEYS</code> values instead of the cluster default.
+      </td>
+    </tr>
+    <tr>
       <td><b>[Kubernetes] Fix podip endpoint in HA mode</b></td>
       <td><code>f3b4561</code></td>
       <td><code>sky/provision/kubernetes/network.py</code></td>
@@ -156,6 +174,7 @@ git checkout -b ellm-{new_version}
 git cherry-pick 493fb1f  # Enable dual GPU in a single API server
 git cherry-pick f3b4561  # Fix podip endpoint in HA mode
 git cherry-pick 9cd2668  # Automatic AMD GPU detection via device plugin labels
+git cherry-pick e9581a9  # Fix pod scheduling for mixed NVIDIA + AMD clusters
 # Resolve any conflicts if upstream changed the same files
 
 # 4. Push new branch
