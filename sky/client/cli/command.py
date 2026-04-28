@@ -4990,8 +4990,9 @@ def gpus_label(context: Optional[str], cleanup: bool, async_mode: bool):
     skypilot.co/accelerator labels. This is required for SkyPilot to
     identify GPU types on nodes that don't have pre-configured labels.
 
-    Note: This command currently only supports NVIDIA GPUs. AMD GPUs
-    must be labeled manually.
+    Note: AMD GPU nodes with the AMD device plugin installed are detected
+    automatically without running this command. This command is only needed
+    for NVIDIA GPU nodes without the NVIDIA GPU Operator (no GFD labels).
 
     Example usage:
 

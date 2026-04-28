@@ -46,4 +46,45 @@ CANONICAL_GPU_NAMES = [
     'T4',
     'K80',
     'M60',
+    # AMD Instinct CDNA4 (2025+)
+    'MI355X',
+    'MI350X',
+    'MI350',
+    'MI325X',
+    # AMD Instinct CDNA3
+    'MI300X',
+    'MI300A',
+    'MI300',
+    # AMD Instinct CDNA2
+    'MI250X',
+    'MI250',
+    # AMD Instinct CDNA / CDNA1
+    'MI210',
+    'MI100',
+    # AMD Radeon Pro workstation (RDNA3 — ROCm supported)
+    'W7900',
+    'W7800',
+    'W7700',
+    # AMD Radeon Pro workstation (RDNA2 — ROCm supported)
+    'W6800',
+    'W6600',
+    # AMD Radeon RX consumer (RDNA3 — ROCm 6.x+ supported)
+    'RX7900XTX',
+    'RX7900XT',
+    'RX7900GRE',
+    'RX7800XT',
+    'RX7700XT',
+    'RX7600XT',
+    'RX7600',
+    # AMD Radeon RX consumer (RDNA2 — ROCm 5.x+ supported)
+    'RX6950XT',
+    'RX6900XT',
+    'RX6800XT',
+    'RX6800',
+    'RX6750XT',
+    'RX6700XT',
+    'RX6700',
+    'RX6650XT',
+    'RX6600XT',
+    'RX6600',
 ]

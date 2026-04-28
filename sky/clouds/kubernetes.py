@@ -587,16 +587,17 @@ class Kubernetes(clouds.Cloud):
                 tpu_requested = True
                 k8s_resource_key = kubernetes_utils.TPU_RESOURCE_KEY
             else:
-                nodes = kubernetes_utils.get_kubernetes_nodes(context=context)
-                gpus = []
-                for node in nodes:
-                    for accelerator in acc_dict:
-                        if node.metadata.labels["skypilot.co/accelerator"].capitalize() == accelerator.capitalize():
-                            gpus.append(node.metadata.labels["skypilot.co/gpu"]+".com/gpu")
-                if gpus:
-                    k8s_resource_key = gpus[0]
+                # Derive resource key from the matched label key.
+                # AMD device plugin labels start with 'amd.com/'; all other
+                # recognized GPU labels (GFD, SkyPilot, Karpenter, etc.) use
+                # the NVIDIA resource key.
+                if (k8s_acc_label_key is not None and
+                        k8s_acc_label_key.startswith('amd.com/')):
+                    k8s_resource_key = kubernetes_utils.SUPPORTED_GPU_RESOURCE_KEYS[
+                        'amd']
                 else:
-                    k8s_resource_key = kubernetes_utils.get_gpu_resource_key(context)
+                    k8s_resource_key = kubernetes_utils.get_gpu_resource_key(
+                        context)
         else:
             # If no GPUs are requested, we set NVIDIA_VISIBLE_DEVICES=none to
             # maintain GPU isolation. This is to override the default behavior
