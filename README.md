@@ -1,5 +1,3 @@
----
-
 <h2>🍴 EmbeddedLLM Fork</h2>
 
 <p>
