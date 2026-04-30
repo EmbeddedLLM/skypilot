@@ -4001,9 +4001,18 @@ def process_skypilot_pods(
             memory_request = parse_memory_resource(
                 (requests.get('memory', '0') if requests is not None else '0'),
                 unit='G')
-            gpu_count = parse_cpu_or_gpu_resource(
-                (requests.get(get_gpu_resource_key(context), '0')
-                 if requests is not None else '0'))
+            # Read the GPU count directly from whichever vendor key the pod
+            # actually requested. Avoid get_gpu_resource_key(context) which
+            # returns the cluster-wide default and picks the wrong vendor in
+            # mixed AMD + NVIDIA clusters (e.g. NVIDIA replica reads as 0).
+            gpu_count = 0
+            if requests is not None:
+                for _gpu_key in SUPPORTED_GPU_RESOURCE_KEYS.values():
+                    val = requests.get(_gpu_key)
+                    if val is not None:
+                        gpu_count = parse_cpu_or_gpu_resource(val)
+                        if gpu_count > 0:
+                            break
             gpu_name = None
             if gpu_count > 0:
                 # Get GPU name from pod node affinity expressions.
