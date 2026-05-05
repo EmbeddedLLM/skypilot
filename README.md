@@ -66,13 +66,14 @@
         AMD GPU nodes are detected automatically when the
         <a href="https://github.com/ROCm/k8s-device-plugin">AMD device plugin</a>
         is installed — no <code>sky gpus label</code> required.
-        Adds <code>AMDGPULabelFormatter</code> which reads
-        <code>amd.com/gpu.product-name[.&lt;GPU&gt;]</code> labels in both
-        single-GPU (name in value) and multi-GPU (name in key suffix) formats.
-        iGPUs/APUs (generic Radeon Graphics, Vega ≤16 CU, mobile NNNm) are filtered
-        at label-match time and never exposed as schedulable resources.
+        Adds <code>AMDGPULabelFormatter</code> which reads the
+        <code>amd.com/gpu.product-name = &lt;NAME&gt;</code> direct label.
+        Each node must expose exactly one GPU type (homogeneous-node assumption);
+        nodes with multiple distinct AMD GPUs (e.g. iGPU + dGPU) are not
+        supported, and neither is the AMD device plugin's suffix label format
+        emitted on such nodes. iGPU-only nodes are treated like any other GPU node.
         All GPU detection code paths — <code>sky gpus list</code>, per-node status,
-        pod scheduling, CPU-only node selection — now iterate all formatters per node,
+        pod scheduling, CPU-only node selection — iterate all formatters per node,
         enabling mixed NVIDIA + AMD clusters with no extra configuration.
         Adds 33 AMD canonical GPU names (MI Instinct CDNA1–4, Radeon Pro W-series,
         Radeon RX RDNA2/3) to the shared GPU name registry.

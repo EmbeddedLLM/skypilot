@@ -10,7 +10,6 @@ Usage:
 """
 import argparse
 import json
-import re
 import subprocess
 import sys
 
@@ -48,35 +47,13 @@ CANONICAL_GPU_NAMES = [
 ]
 
 # ── Inlined from AMDGPULabelFormatter in sky/provision/kubernetes/utils.py ───
-LABEL_KEY_DIRECT = 'amd.com/gpu.product-name'
-LABEL_KEY_PREFIX = 'amd.com/gpu.product-name.'
-
-_IGPU_NAMES = frozenset(['amd_radeon_graphics', 'radeon_graphics'])
-_IGPU_VEGA_RE = re.compile(r'_vega_(\d+)(?:_|$)')
-_IGPU_MOBILE_RE = re.compile(r'\d{3}m$')
-
-
-def _is_igpu(name_lower: str) -> bool:
-    if name_lower in _IGPU_NAMES:
-        return True
-    m = _IGPU_VEGA_RE.search(name_lower)
-    if m:
-        try:
-            if int(m.group(1)) <= 16:
-                return True
-        except ValueError:
-            pass
-    last = name_lower.rstrip('_').rsplit('_', 1)[-1]
-    return bool(_IGPU_MOBILE_RE.fullmatch(last))
+# Only the direct format is supported. Suffix format and iGPU filtering have
+# been intentionally dropped — homogeneous-node assumption.
+LABEL_KEY = 'amd.com/gpu.product-name'
 
 
 def match_label_key(label_key: str) -> bool:
-    if label_key == LABEL_KEY_DIRECT:
-        return True
-    if label_key.startswith(LABEL_KEY_PREFIX):
-        suffix = label_key[len(LABEL_KEY_PREFIX):]
-        return not _is_igpu(suffix.lower())
-    return False
+    return label_key == LABEL_KEY
 
 
 def _normalize(raw: str) -> str:
@@ -90,11 +67,8 @@ def _normalize(raw: str) -> str:
 
 
 def get_accelerator_from_label(label_key: str, value: str) -> str:
-    if label_key.startswith(LABEL_KEY_PREFIX):
-        raw = label_key[len(LABEL_KEY_PREFIX):]
-    else:
-        raw = value
-    return _normalize(raw)
+    del label_key
+    return _normalize(value)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -148,13 +122,13 @@ def main():
     else:
         print('  (none)')
 
-    sep('match_label_key — GPU vs iGPU filtering')
+    sep('match_label_key')
     product_labels = {k: v for k, v in labels.items()
-                      if k == LABEL_KEY_DIRECT or k.startswith(LABEL_KEY_PREFIX)}
+                      if k == LABEL_KEY or k.startswith('amd.com/gpu.product-name.')}
     if product_labels:
         for k, v in sorted(product_labels.items()):
             matched = match_label_key(k)
-            tag = '✓ GPU    ' if matched else '✗ iGPU  '
+            tag = '✓ GPU      ' if matched else '✗ ignored  '
             print(f'  {tag}  {k} = {v!r}')
     else:
         print('  (no amd.com/gpu.product-name* labels found)')
@@ -174,19 +148,17 @@ def main():
 
     sep('_normalize spot-checks')
     samples = [
-        ('AMD_Radeon_RX_7900_XTX', False),
-        ('AMD_Radeon_RX_7900_XT',  False),
-        ('AMD_Instinct_MI300X',    False),
-        ('AMD_Radeon_Pro_W7900',   False),
-        ('AMD_Radeon_Graphics',    True),
-        ('AMD_Radeon_780M',        True),
-        ('AMD_Radeon_Vega_8',      True),
+        'AMD_Radeon_RX_7900_XTX',
+        'AMD_Radeon_RX_7900_XT',
+        'AMD_Instinct_MI300X',
+        'AMD_Radeon_Pro_W7900',
+        'AMD_Radeon_Graphics',
+        'AMD_Radeon_780M',
+        'AMD_Radeon_Vega_8',
     ]
-    for raw, expect_igpu in samples:
+    for raw in samples:
         name = _normalize(raw)
-        igpu = _is_igpu(raw.lower())
-        tag = '[iGPU filtered]' if igpu else '               '
-        print(f'  {tag}  {raw:42s} -> {name!r}')
+        print(f'  {raw:42s} -> {name!r}')
 
     sep()
     if resolved:
