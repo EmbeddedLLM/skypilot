@@ -431,8 +431,8 @@ class GPULabelFormatter:
         """Given a label key and value, returns the GPU type.
 
         Default implementation delegates to get_accelerator_from_label_value.
-        Override for formatters where the GPU name is encoded in the key
-        rather than the value (e.g. AMD device plugin suffix labels).
+        Override only if the GPU name is encoded somewhere other than the
+        value.
         """
         return cls.get_accelerator_from_label_value(value)
 
@@ -733,61 +733,29 @@ class GFDLabelFormatter(GPULabelFormatter):
 class AMDGPULabelFormatter(GPULabelFormatter):
     """Label formatter for AMD GPU nodes labeled by AMD device plugin.
 
-    The AMD device plugin (github.com/ROCm/k8s-device-plugin) sets node labels
-    in one of two formats depending on the number of distinct GPU types:
+    Only the direct (single-GPU-type-per-node) label format is supported:
 
-      Single GPU type:
-        amd.com/gpu.product-name = "AMD_Radeon_RX_7900_XTX"   (name in value)
+        amd.com/gpu.product-name = "AMD_Radeon_RX_7900_XTX"
 
-      Multiple GPU types:
-        amd.com/gpu.product-name.AMD_Radeon_RX_7900_XTX = "1" (name in key)
-        amd.com/gpu.product-name.AMD_Radeon_Graphics = "1"     (iGPU, filtered)
-
-    iGPUs/APUs are filtered out via match_label_key so they are never exposed
-    as schedulable GPU resources.
+    The suffix format (amd.com/gpu.product-name.<NAME> = "1") used on nodes
+    with multiple distinct GPU types (e.g. iGPU + dGPU) is intentionally NOT
+    supported — SkyPilot requires a node to expose exactly one GPU type.
+    iGPU-only nodes are valid and treated like any other GPU node.
     """
 
-    LABEL_KEY_DIRECT = 'amd.com/gpu.product-name'
-    LABEL_KEY_PREFIX = 'amd.com/gpu.product-name.'
-
-    # iGPU/APU patterns — names come from sysfs product_name with
-    # spaces replaced by underscores, lowercased before matching.
-    _IGPU_NAMES: frozenset = frozenset(
-        ['amd_radeon_graphics', 'radeon_graphics'])
-    _IGPU_VEGA_RE: re.Pattern = re.compile(r'_vega_(\d+)(?:_|$)')
-    # RDNA mobile APUs: 3-digit model + single 'm' (e.g. 740m, 780m, 890m)
-    _IGPU_MOBILE_RE: re.Pattern = re.compile(r'\d{3}m$')
-
-    @classmethod
-    def _is_igpu(cls, name_lower: str) -> bool:
-        if name_lower in cls._IGPU_NAMES:
-            return True
-        m = cls._IGPU_VEGA_RE.search(name_lower)
-        if m:
-            try:
-                if int(m.group(1)) <= 16:
-                    return True
-            except ValueError:
-                pass
-        last = name_lower.rstrip('_').rsplit('_', 1)[-1]
-        return bool(cls._IGPU_MOBILE_RE.fullmatch(last))
+    LABEL_KEY = 'amd.com/gpu.product-name'
 
     @classmethod
     def match_label_key(cls, label_key: str) -> bool:
-        if label_key == cls.LABEL_KEY_DIRECT:
-            return True
-        if label_key.startswith(cls.LABEL_KEY_PREFIX):
-            suffix = label_key[len(cls.LABEL_KEY_PREFIX):]
-            return not cls._is_igpu(suffix.lower())
-        return False
+        return label_key == cls.LABEL_KEY
 
     @classmethod
     def get_label_key(cls, accelerator: Optional[str] = None) -> str:
-        return cls.LABEL_KEY_DIRECT
+        return cls.LABEL_KEY
 
     @classmethod
     def get_label_keys(cls) -> List[str]:
-        return [cls.LABEL_KEY_DIRECT]
+        return [cls.LABEL_KEY]
 
     @classmethod
     def get_label_values(cls, accelerator: str) -> List[str]:
@@ -795,24 +763,13 @@ class AMDGPULabelFormatter(GPULabelFormatter):
 
     @classmethod
     def validate_label_value(cls, value: str) -> Tuple[bool, str]:
-        # Direct format value is a GPU name string; suffix format value is "1".
-        # Both are valid as long as the value is non-empty.
         valid = bool(value and value.strip())
         return valid, (f'AMD GPU label value {value!r} must be non-empty.'
                        if not valid else '')
 
     @classmethod
     def get_accelerator_from_label_value(cls, value: str) -> str:
-        # Direct format: GPU name is the value.
         return cls._normalize(value)
-
-    @classmethod
-    def get_accelerator_from_label(cls, label_key: str, value: str) -> str:
-        if label_key.startswith(cls.LABEL_KEY_PREFIX):
-            raw = label_key[len(cls.LABEL_KEY_PREFIX):]  # GPU name in key
-        else:
-            raw = value  # Direct format: GPU name in value
-        return cls._normalize(raw)
 
     @classmethod
     def _normalize(cls, raw: str) -> str:
