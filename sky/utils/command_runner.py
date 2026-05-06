@@ -1783,9 +1783,14 @@ class KubernetesCommandRunner(CommandRunner):
             shlex.quote(send_dir),
             shlex.quote(send_target)
         ]
-        # --no-same-owner / --no-same-group mirrors --no-owner --no-group.
+        # `--no-same-owner` mirrors rsync's `--no-owner --no-group`: when
+        # extracting as root we'd otherwise try to preserve the source uid;
+        # this forces tar to use the current uid. There is no
+        # `--no-same-group` in GNU tar — group is implicitly the current
+        # user's primary group when --no-same-owner is set. Non-root
+        # extractors already ignore owner/group from the archive.
         tar_recv = [
-            'tar', '-xf', '-', '--no-same-owner', '--no-same-group', '-C',
+            'tar', '-xf', '-', '--no-same-owner', '-C',
             shlex.quote(recv_dir)
         ]
 
