@@ -3,6 +3,14 @@ import enum
 import fcntl
 import hashlib
 import os
+
+# Force SPDY transport for kubectl exec, globally for any subprocess this
+# module spawns. WebSocket transport (default in newer kubectl) deadlocks
+# on Ubuntu 26 / kernel 6.8+ when bidirectional traffic exceeds the HTTP/2
+# receive window — affects setup-command output streaming, rsync, and any
+# other kubectl-exec-based stream. SPDY uses separate channels per
+# stdin/stdout/stderr and avoids the deadlock.
+os.environ.setdefault('KUBECTL_REMOTE_COMMAND_WEBSOCKETS', 'false')
 import pathlib
 import pty
 import re

@@ -1410,6 +1410,20 @@ setup_commands:
   # Line 'for step in ..': check if any failure indicator exists for the setup done in pod args and print the error message. This is only a best effort, as the
   # commands in pod args are asynchronous and we cannot guarantee the failure indicators are created before the setup commands finish.
   - |
+    # ─── BEGIN VERBOSE SETUP TRACE ────────────────────────────────────────
+    # Tee everything to /tmp/setup_commands_trace.log so that even if the
+    # outer kubectl exec stream wedges, we have a forensic trail of which
+    # line was last executed. Lines also still go to stdout/stderr so the
+    # api-server's provision.log keeps streaming.
+    SETUP_TRACE_LOG=/tmp/setup_commands_trace.log
+    : > "$SETUP_TRACE_LOG"  # truncate
+    exec > >(tee -a "$SETUP_TRACE_LOG") 2> >(tee -a "$SETUP_TRACE_LOG" >&2)
+    PS4='+ [setup-trace $LINENO] '
+    set -x
+    echo "[setup-trace] starting at $(date --rfc-3339=ns) on $(hostname)"
+    trap 'rc=$?; echo "[setup-trace] EXIT trap rc=$rc line=$LINENO at $(date --rfc-3339=ns)"; echo "$rc" > /tmp/setup_commands_exit_code; date --rfc-3339=ns > /tmp/setup_commands_finished_at' EXIT
+    trap 'echo "[setup-trace] ERR trap line=$LINENO command=$BASH_COMMAND"' ERR
+    # ─── END HEADER ───────────────────────────────────────────────────────
     mkdir -p ~/.ssh; touch ~/.ssh/config;
     {%- for initial_setup_command in initial_setup_commands %}
     {{ initial_setup_command }}
@@ -1459,6 +1473,21 @@ setup_commands:
     sudo chmod 777 /tmp/tpu_logs;
     {% endif %}
     {{ ssh_max_sessions_config }}
+    # ─── END-OF-SETUP MARKER ──────────────────────────────────────────────
+    # If the script reaches here, the entire setup body succeeded. Any hang
+    # observed AFTER this line (e.g. kubectl exec not returning) means the
+    # remote work is done but the kubectl/exec stream is stalled at
+    # teardown — distinguishable from an actual setup hang.
+    echo "[setup-trace] all setup_commands body completed at $(date --rfc-3339=ns)"
+    date --rfc-3339=ns > /tmp/setup_commands_body_complete
+    # Also send a recognizable marker line to stdout for the api-server to see.
+    echo "===SKY_SETUP_BODY_COMPLETE==="
+    set +x
+    # Explicitly close stdout/stderr before bash exits, so kubectl exec's
+    # stdout/stderr streams reach EOF promptly. Without this, an interactive
+    # bash (-i) can leave async writes pending and delay EOF.
+    exec 1>&-
+    exec 2>&-
 
 # Format: `REMOTE_PATH : LOCAL_PATH`
 file_mounts: {
