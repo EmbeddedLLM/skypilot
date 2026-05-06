@@ -1641,50 +1641,222 @@ class KubernetesCommandRunner(CommandRunner):
         stream_logs: bool = True,
         max_retry: int = 1,
     ) -> None:
-        """Uses 'rsync' to sync 'source' to 'target'.
+        """Sync files between local and pod via tar-stream over kubectl exec.
+
+        Despite the historical name, this does NOT invoke rsync. rsync's
+        session teardown protocol assumes a single duplex transport that
+        delivers half-close semantics (as SSH does). kubectl exec's stream
+        multiplexing presents stdin and stdout as independent channels;
+        rsync 3.4.x running over it deadlocks at session end after data
+        transfer completes (sender waits for receiver to close stdout,
+        receiver waits for sender to close stdin, neither closes first).
+        This was previously masked on older kernels but reproduces
+        consistently on Ubuntu 26 / kernel 6.8+. See `tests/...` and the
+        analysis in PR description for repro details.
+
+        We replace rsync with `tar -c | kubectl exec -i -- tar -x` (or the
+        reverse for `up=False`). Tar uses a single one-way stream, so EOF
+        is detected naturally and there's no teardown handshake.
 
         Args:
             source: The source path.
             target: The target path.
-            up: The direction of the sync, True for local to cluster, False
-              for cluster to local.
+            up: True for local→pod, False for pod→local.
             log_path: Redirect stdout/stderr to the log_path.
             stream_logs: Stream logs to the stdout/stderr.
-            max_retry: The maximum number of retries for the rsync command.
-              This value should be non-negative.
+            max_retry: Maximum number of retries (must be non-negative).
 
         Raises:
-            exceptions.CommandError: rsync command failed.
+            exceptions.CommandError: tar/kubectl command failed.
         """
+        debug = os.environ.get('SKYPILOT_DEBUG_TAR_RSYNC') == '1' or True
+        tag = '[TAR-RSYNC-DEBUG]'
 
-        # Build command.
-        helper_path = shlex.quote(
-            os.path.join(os.path.abspath(os.path.dirname(__file__)),
-                         'kubernetes', 'rsync_helper.sh'))
-        namespace_context = f'{self.namespace}+{self.context}'
-        # Avoid rsync interpreting :, /, and + in namespace_context as the
-        # default delimiter for options and arguments.
-        # rsync_helper.sh will parse the namespace_context by reverting the
-        # encoding and pass it to kubectl exec.
-        encoded_namespace_context = (namespace_context.replace(
-            '@', '%40').replace(':', '%3A').replace('/',
-                                                    '%2F').replace('+', '%2B'))
-        self._rsync(
-            source,
-            target,
-            node_destination=f'{self.pod_name}@{encoded_namespace_context}',
-            up=up,
-            rsh_option=helper_path,
-            log_path=log_path,
-            stream_logs=stream_logs,
-            max_retry=max_retry,
-            prefix_command=(f'chmod +x {helper_path} && ' + (
-                '' if self.container is None else
-                f'SKYPILOT_K8S_EXEC_CONTAINER={shlex.quote(self.container)} ')),
-            # rsync with `kubectl` as the rsh command will cause ~/xx parsed as
-            # /~/xx, so we need to replace ~ with the remote home directory. We
-            # only need to do this when ~ is at the beginning of the path.
-            get_remote_home_dir=self.get_remote_home_dir)
+        def dlog(msg: str) -> None:
+            if debug:
+                logger.info(f'{tag} {msg}')
+
+        dlog(f'rsync called: source={source!r} target={target!r} up={up} '
+             f'pod={self.pod_name!r} namespace={self.namespace!r} '
+             f'context={self.context!r} container={self.container!r}')
+
+        # Build kubectl args (mirrors what `run` constructs).
+        kubectl_args = ['-n', self.namespace]
+        if self.context:
+            kubectl_args += ['--context', self.context]
+        if self.context is None:
+            kubectl_args += ['--kubeconfig', '/dev/null']
+        kubectl_args += [self.kube_identifier]
+        if self.container is not None:
+            kubectl_args += ['-c', self.container]
+        kubectl_exec = ['kubectl', 'exec', '-i', *kubectl_args, '--']
+
+        # Resolve source / target paths and figure out which side runs the
+        # tar -c (sender) and which runs tar -x (receiver).
+        if up:
+            local_path = pathlib.Path(source).expanduser().resolve()
+            remote_path = target
+            if remote_path.startswith('~'):
+                remote_home = self.get_remote_home_dir_with_retry(
+                    max_retry=max_retry,
+                    get_remote_home_dir=self.get_remote_home_dir)
+                remote_path = remote_path.replace('~', remote_home, 1)
+        else:
+            local_path = pathlib.Path(target).expanduser()
+            local_path.mkdir(parents=True, exist_ok=True)
+            local_path = local_path.resolve()
+            remote_path = source
+            if remote_path.startswith('~'):
+                remote_home = self.get_remote_home_dir_with_retry(
+                    max_retry=max_retry,
+                    get_remote_home_dir=self.get_remote_home_dir)
+                remote_path = remote_path.replace('~', remote_home, 1)
+
+        dlog(f'resolved local_path={str(local_path)!r} '
+             f'remote_path={remote_path!r}')
+
+        # Build excludes for tar. Mirrors RSYNC_FILTER_{SKY,GIT}IGNORE +
+        # RSYNC_EXCLUDE_OPTION.
+        tar_send_excludes: List[str] = []
+        if up:
+            if (local_path / constants.SKY_IGNORE_FILE).exists():
+                tar_send_excludes += [
+                    f'--exclude-ignore={shlex.quote(constants.SKY_IGNORE_FILE)}'
+                ]
+            else:
+                tar_send_excludes += [
+                    f'--exclude-ignore={shlex.quote(constants.GIT_IGNORE_FILE)}'
+                ]
+                git_exclude_path = local_path / GIT_EXCLUDE
+                if git_exclude_path.exists():
+                    tar_send_excludes += [
+                        f'--exclude-from={shlex.quote(str(git_exclude_path))}'
+                    ]
+        # `down` direction: filtering applies on the remote side. Skip
+        # remote-side ignore evaluation by default; existing rsync behavior
+        # for down was symmetric but in practice down-syncs SkyPilot does
+        # are scoped (logs/ckpts), where these filters don't apply.
+
+        # Determine whether source path is a directory (so we tar its
+        # contents — rsync's `path/` trailing-slash semantics) or a single
+        # file (tar just that file). For local up-source, we know now;
+        # for remote down-source we ask the pod.
+        if up:
+            source_is_dir = local_path.is_dir()
+            send_dir = (str(local_path) if source_is_dir else
+                        str(local_path.parent))
+            send_target = '.' if source_is_dir else local_path.name
+        else:
+            check_cmd = kubectl_exec + [
+                'sh', '-c',
+                f'if [ -d {shlex.quote(remote_path)} ]; then echo dir; '
+                f'elif [ -e {shlex.quote(remote_path)} ]; then echo file; '
+                f'else echo missing; fi'
+            ]
+            chk = subprocess.run(check_cmd,
+                                 capture_output=True,
+                                 text=True,
+                                 check=False)
+            kind = (chk.stdout or '').strip()
+            dlog(f'remote source check: {kind!r} '
+                 f'(stderr={chk.stderr.strip()!r})')
+            if kind == 'missing':
+                raise exceptions.CommandError(
+                    1, ' '.join(check_cmd),
+                    f'Remote source does not exist: {remote_path}',
+                    stderr=chk.stderr)
+            source_is_dir = (kind == 'dir')
+            send_dir = (remote_path if source_is_dir else
+                        os.path.dirname(remote_path) or '/')
+            send_target = '.' if source_is_dir else os.path.basename(
+                remote_path)
+
+        # Receiver target dir: tar -x writes into this directory.
+        if up:
+            recv_dir = remote_path
+        else:
+            recv_dir = str(local_path)
+
+        # Tar create (sender) and extract (receiver) commands.
+        tar_send = [
+            'tar', '-cf', '-', *tar_send_excludes, '-C',
+            shlex.quote(send_dir),
+            shlex.quote(send_target)
+        ]
+        # --no-same-owner / --no-same-group mirrors --no-owner --no-group.
+        tar_recv = [
+            'tar', '-xf', '-', '--no-same-owner', '--no-same-group', '-C',
+            shlex.quote(recv_dir)
+        ]
+
+        if up:
+            # Local sends, remote extracts. Ensure remote dir exists first.
+            mkdir_cmd = kubectl_exec + [
+                'sh', '-c', f'mkdir -p {shlex.quote(recv_dir)}'
+            ]
+            dlog(f'ensuring remote dir: {" ".join(mkdir_cmd)}')
+            mk = subprocess.run(mkdir_cmd,
+                                capture_output=True,
+                                text=True,
+                                check=False)
+            if mk.returncode != 0:
+                raise exceptions.CommandError(
+                    mk.returncode, ' '.join(mkdir_cmd),
+                    f'Failed to mkdir remote: {mk.stderr.strip()}',
+                    stderr=mk.stderr)
+            sender = ' '.join(tar_send)
+            receiver = ' '.join(kubectl_exec + tar_recv)
+        else:
+            # Remote sends, local extracts.
+            sender = ' '.join(kubectl_exec + tar_send)
+            receiver = ' '.join(tar_recv)
+
+        # Force SPDY transport for kubectl exec — though tar is one-way, we
+        # also keep this for safety. The WebSocket transport had unrelated
+        # bidirectional issues seen during debugging.
+        env_prefix = 'KUBECTL_REMOTE_COMMAND_WEBSOCKETS=false'
+        command = f'{env_prefix} {sender} | {receiver}'
+        dlog(f'tar pipeline: {command}')
+
+        backoff = common_utils.Backoff(initial_backoff=5, max_backoff_factor=5)
+        assert max_retry > 0, f'max_retry {max_retry} must be positive.'
+        attempt = 0
+        returncode = -1
+        stdout = ''
+        stderr = ''
+        while max_retry >= 0:
+            attempt += 1
+            t0 = time.time()
+            dlog(f'attempt {attempt}: starting pipeline')
+            returncode, stdout, stderr = log_lib.run_with_log(
+                command,
+                log_path=log_path,
+                stream_logs=stream_logs,
+                shell=True,
+                require_outputs=True)
+            elapsed = time.time() - t0
+            dlog(f'attempt {attempt}: returncode={returncode} '
+                 f'elapsed={elapsed:.2f}s '
+                 f'stdout_len={len(stdout)} stderr_len={len(stderr)}')
+            if returncode == 0:
+                break
+            dlog(f'attempt {attempt} failed; stdout={stdout[-200:]!r} '
+                 f'stderr={stderr[-200:]!r}')
+            max_retry -= 1
+            if max_retry >= 0:
+                time.sleep(backoff.current_backoff())
+
+        direction = 'up' if up else 'down'
+        error_msg = (f'Failed to tar-rsync {direction}: {source} -> {target}. '
+                     'Ensure that the network is stable, then retry.')
+
+        subprocess_utils.handle_returncode(returncode,
+                                           command,
+                                           error_msg,
+                                           stderr=stdout + stderr,
+                                           stream_logs=stream_logs)
+        dlog(f'rsync done: direction={direction} source={source!r} '
+             f'target={target!r}')
 
 
 class LocalProcessCommandRunner(CommandRunner):

@@ -1,4 +1,19 @@
 #!/bin/bash
+# Force kubectl exec to use SPDY transport instead of WebSocket.
+#
+# WebSocket transport (default in newer kubectl) multiplexes stdin, stdout,
+# stderr, and ping/pong frames over a single HTTP/2 stream. On Ubuntu 26 /
+# kernel 6.8+, bidirectional rsync traffic fills the HTTP/2 receive window
+# faster than it drains; once the window is exhausted, ping frames can no
+# longer get through and the connection is killed (or wedges silently).
+# Reproduces at ~2-3 MB of bidirectional traffic in a `dd | kubectl exec
+# -i -- cat | wc -c` test.
+#
+# SPDY uses separate channels per stream (stdin/stdout/stderr) so a slow
+# reader on one channel doesn't starve the others. Forcing SPDY here fixes
+# rsync hangs during setup file_mounts and wheel propagation.
+export KUBECTL_REMOTE_COMMAND_WEBSOCKETS=false
+
 # We need to determine the pod, namespace and context from the args
 # For backward compatibility, we use + as the separator between namespace and context and add handling when context is not provided
 if [ "$1" = "-l" ]; then
