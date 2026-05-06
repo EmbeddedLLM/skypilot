@@ -1431,15 +1431,25 @@ setup_commands:
     STEPS=("apt-ssh-setup" "runtime-setup" "env-setup")
     start_epoch=$(date +%s);
 
-    # Wait for SSH setup to complete before proceeding
+    # Wait for SSH setup to complete before proceeding.
+    #
+    # IMPORTANT: use `tail -f --pid=$$` so tail self-terminates when this
+    # script exits. The previous form (`tail -f & ... kill $TAIL_PID`) was
+    # observed to fail with `bash: kill: (PID) - Permission denied` when
+    # the background tail ended up in a different process group under
+    # `bash --login -c -i`. An orphaned `tail -f` keeps the kubectl exec
+    # session's stdout fd open indefinitely, so the script-reached-end
+    # never propagates to kubectl exec as EOF, and kubectl exec hangs
+    # forever even though the remote work completed. `--pid=$$` makes tail
+    # exit when the script's PID dies, regardless of whether `kill` works.
     echo "=== Logs for asynchronous SSH setup ===";
     ([ -f /tmp/apt_ssh_setup_complete ]|| [ -f /tmp/${STEPS[0]}.failed ]) && cat /tmp/${STEPS[0]}.log ||
-    { tail -f -n +1 /tmp/${STEPS[0]}.log & TAIL_PID=$!; echo "Tail PID: $TAIL_PID"; sleep 0.5; until [ -f /tmp/apt_ssh_setup_complete ] || [ -f /tmp/${STEPS[0]}.failed ]; do sleep 0.5; done; kill $TAIL_PID || true; };
+    { tail -f --pid=$$ -n +1 /tmp/${STEPS[0]}.log & TAIL_PID=$!; echo "Tail PID: $TAIL_PID"; sleep 0.5; until [ -f /tmp/apt_ssh_setup_complete ] || [ -f /tmp/${STEPS[0]}.failed ]; do sleep 0.5; done; kill $TAIL_PID 2>/dev/null || true; };
     [ -f /tmp/${STEPS[0]}.failed ] && { echo "Error: ${STEPS[0]} failed. Exiting."; exit 1; } || true;
 
     echo "=== Logs for asynchronous ray and skypilot installation ===";
     ([ -f /tmp/ray_skypilot_installation_complete ]|| [ -f /tmp/${STEPS[1]}.failed ]) && cat /tmp/${STEPS[1]}.log ||
-    { tail -f -n +1 /tmp/${STEPS[1]}.log & TAIL_PID=$!; echo "Tail PID: $TAIL_PID"; sleep 0.5; until [ -f /tmp/ray_skypilot_installation_complete ] || [ -f /tmp/${STEPS[1]}.failed ]; do sleep 0.5; done; kill $TAIL_PID || true; };
+    { tail -f --pid=$$ -n +1 /tmp/${STEPS[1]}.log & TAIL_PID=$!; echo "Tail PID: $TAIL_PID"; sleep 0.5; until [ -f /tmp/ray_skypilot_installation_complete ] || [ -f /tmp/${STEPS[1]}.failed ]; do sleep 0.5; done; kill $TAIL_PID 2>/dev/null || true; };
     [ -f /tmp/${STEPS[1]}.failed ] && { echo "Error: ${STEPS[1]} failed. Exiting."; exit 1; } || true;
 
     end_epoch=$(date +%s);
@@ -1483,6 +1493,13 @@ setup_commands:
     # Also send a recognizable marker line to stdout for the api-server to see.
     echo "===SKY_SETUP_BODY_COMPLETE==="
     set +x
+    # Defensive: kill any background descendants of this script (e.g. the
+    # tail -f from the wait stanzas) before closing stdout/stderr, so they
+    # don't keep the kubectl exec stream open after we exit. The
+    # `tail --pid=$$` flag is the primary defence; this is belt-and-
+    # suspenders for any new background commands that may be added.
+    jobs -p | xargs -r kill 2>/dev/null || true
+    pkill -P $$ 2>/dev/null || true
     # Explicitly close stdout/stderr before bash exits, so kubectl exec's
     # stdout/stderr streams reach EOF promptly. Without this, an interactive
     # bash (-i) can leave async writes pending and delay EOF.
