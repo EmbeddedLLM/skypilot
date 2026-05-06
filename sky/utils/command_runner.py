@@ -1710,9 +1710,13 @@ class KubernetesCommandRunner(CommandRunner):
                     get_remote_home_dir=self.get_remote_home_dir)
                 remote_path = remote_path.replace('~', remote_home, 1)
         else:
+            # Don't mkdir target path unconditionally — it may be a file
+            # path. mkdir of the appropriate dir (target itself if source
+            # is a dir; target's parent if source is a file) happens later
+            # once we've resolved source_is_dir.
             local_path = pathlib.Path(target).expanduser()
-            local_path.mkdir(parents=True, exist_ok=True)
-            local_path = local_path.resolve()
+            local_path = (local_path.resolve() if local_path.exists() else
+                          local_path.parent.resolve() / local_path.name)
             remote_path = source
             if remote_path.startswith('~'):
                 remote_home = self.get_remote_home_dir_with_retry(
@@ -1779,11 +1783,49 @@ class KubernetesCommandRunner(CommandRunner):
             send_target = '.' if source_is_dir else os.path.basename(
                 remote_path)
 
-        # Receiver target dir: tar -x writes into this directory.
+        # Receiver target dir + (optional) rename. Two cases:
+        #
+        # 1. Source is a directory (rsync semantics: copy CONTENTS into
+        #    target). recv_dir is target itself; tar extracts `.` into it.
+        #
+        # 2. Source is a single file. rsync would create the target *file*
+        #    at the given path (or place inside it if it's an existing
+        #    dir, but that's not how SkyPilot uses it — SkyPilot always
+        #    passes target as the desired final file path). tar can't
+        #    extract directly to a renamed file, so we extract into the
+        #    PARENT and use --transform to rename `<src basename>` to
+        #    `<target basename>`. If they happen to match, --transform is
+        #    a no-op.
         if up:
-            recv_dir = remote_path
+            target_path = remote_path
         else:
-            recv_dir = str(local_path)
+            target_path = str(local_path)
+
+        if source_is_dir:
+            recv_dir = target_path
+            recv_transform: List[str] = []
+        else:
+            recv_dir = os.path.dirname(target_path) or '/'
+            target_basename = os.path.basename(target_path)
+            if target_basename != send_target:
+                # tar --transform uses sed-style. Anchor with ^...$ so we
+                # only rename top-level entry whose name equals send_target.
+                # Escape sed metacharacters in both names.
+                def _sed_escape(s: str) -> str:
+                    return s.replace('\\', '\\\\').replace('/', '\\/').replace(
+                        '&', '\\&').replace('.', '\\.').replace(
+                            '*', '\\*').replace('[', '\\[').replace(
+                                ']', '\\]').replace('^', '\\^').replace(
+                                    '$', '\\$')
+
+                from_re = _sed_escape(send_target)
+                to_re = target_basename.replace('\\',
+                                                '\\\\').replace('/', '\\/')
+                recv_transform = [
+                    f'--transform=s/^{from_re}$/{to_re}/'
+                ]
+            else:
+                recv_transform = []
 
         # Tar create (sender) and extract (receiver) commands.
         tar_send = [
@@ -1798,12 +1840,13 @@ class KubernetesCommandRunner(CommandRunner):
         # user's primary group when --no-same-owner is set. Non-root
         # extractors already ignore owner/group from the archive.
         tar_recv = [
-            'tar', '-xf', '-', '--no-same-owner', '-C',
+            'tar', '-xf', '-', '--no-same-owner', *recv_transform, '-C',
             shlex.quote(recv_dir)
         ]
 
         if up:
-            # Local sends, remote extracts. Ensure remote dir exists first.
+            # Local sends, remote extracts. Ensure remote PARENT dir exists
+            # first. (recv_dir is already the parent for file targets.)
             mkdir_cmd = kubectl_exec + [
                 'sh', '-c', f'mkdir -p {shlex.quote(recv_dir)}'
             ]
@@ -1820,7 +1863,8 @@ class KubernetesCommandRunner(CommandRunner):
             sender = ' '.join(tar_send)
             receiver = ' '.join(kubectl_exec + tar_recv)
         else:
-            # Remote sends, local extracts.
+            # Remote sends, local extracts. Ensure local parent exists too.
+            os.makedirs(recv_dir, exist_ok=True)
             sender = ' '.join(kubectl_exec + tar_send)
             receiver = ' '.join(tar_recv)
 
