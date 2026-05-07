@@ -1296,9 +1296,23 @@ POOL_JOBS_RESOURCES_RATIO = 1
 # Number of ongoing launches launches allowed per worker. Can probably be
 # increased a bit to around 16 but keeping it lower to just to be safe
 LAUNCHES_PER_WORKER = 8
-# Number of ongoing launches allowed per service. Can probably be increased
-# a bit as well.
-LAUNCHES_PER_SERVICE = 4
+# Number of ongoing launches allowed per service. Lowered from upstream's
+# 4 → 2 for k8s-mostly deployments where simultaneous replica launches are
+# uncommon (replica launches on k8s are pod-create operations, not
+# minutes-long VM provisions). This roughly doubles the number of services
+# a controller of a given memory size can run.
+LAUNCHES_PER_SERVICE = 2
+
+# Memory per local-API-server worker on the *serve controller pod* (not the
+# central API server). Upstream uses `LONG_WORKER_MEM_GB = 0.4` for both,
+# but that value is sized for cloud-VM launches that load heavyweight cloud
+# SDK chains. Replica launches on Kubernetes import far less Python and use
+# fast-returning kubectl/k8s-client calls, so the per-worker RSS is closer
+# to 200 MB. Keep some headroom over that and use 0.25 GB.
+#
+# This is intentionally a separate knob from `server_config.LONG_WORKER_MEM_GB`
+# so it doesn't affect the central API server's worker pool sizing.
+SERVE_LOCAL_API_LONG_WORKER_MEM_GB = 0.25
 
 # Based on testing, each worker takes around 200-300MB memory. Keeping it
 # higher to be safe.
@@ -1382,7 +1396,9 @@ def _is_consolidation_mode(pool: bool) -> bool:
 
 
 @annotations.lru_cache(scope='request')
-def _get_parallelism(pool: bool, raw_resource_per_unit: float) -> int:
+def _get_parallelism(pool: bool,
+                     raw_resource_per_unit: float,
+                     worker_mem_gb_override: Optional[float] = None) -> int:
     """Returns the number of jobs controllers / services that should be running.
 
     This is the number of controllers / services that should be running
@@ -1396,6 +1412,13 @@ def _get_parallelism(pool: bool, raw_resource_per_unit: float) -> int:
     API server workers. We limit to only 8 launches per worker, so our logic is
     each controller will take CONTROLLER_MEMORY_MB + 8 * WORKER_MEMORY_MB. We
     leave some leftover room for ssh codegen and ray status overhead.
+
+    Args:
+        worker_mem_gb_override: if set, used instead of
+            `server_config.LONG_WORKER_MEM_GB` for the per-worker memory cost
+            in non-consolidation mode. Allows callers (e.g. serve) to model a
+            cheaper local API server worker without affecting the central
+            API server's worker pool sizing.
     """
     consolidation_mode = _is_consolidation_mode(pool)
 
@@ -1410,8 +1433,9 @@ def _get_parallelism(pool: bool, raw_resource_per_unit: float) -> int:
     if not consolidation_mode:
         launches_per_worker = (LAUNCHES_PER_WORKER
                                if pool else LAUNCHES_PER_SERVICE)
-        resource_per_unit_worker = (launches_per_worker *
-                                    server_config.LONG_WORKER_MEM_GB * 1024)
+        worker_mem_gb = (worker_mem_gb_override if worker_mem_gb_override
+                         is not None else server_config.LONG_WORKER_MEM_GB)
+        resource_per_unit_worker = (launches_per_worker * worker_mem_gb * 1024)
 
     # If running pool on jobs controller, we need to account for the resources
     # consumed by the jobs.
@@ -1441,9 +1465,16 @@ def _get_number_of_services(pool: bool) -> int:
     # _get_parallelism already applies (1 + R) to the per-unit cost. Multiplying
     # here applies the ratio twice (quadratically), so with R != 1 services
     # would get far fewer slots than intended. Masked by R=1 today.
-    return _get_parallelism(pool=pool,
-                            raw_resource_per_unit=SERVE_MONITORING_MEMORY_MB *
-                            POOL_JOBS_RESOURCES_RATIO)
+    #
+    # We pass `worker_mem_gb_override=SERVE_LOCAL_API_LONG_WORKER_MEM_GB` so
+    # that the per-launch worker memory reservation matches the actual
+    # footprint of the controller-pod-local API server (k8s-friendly), not
+    # the heavier cloud-VM-sized value used for the central API server.
+    return _get_parallelism(
+        pool=pool,
+        raw_resource_per_unit=SERVE_MONITORING_MEMORY_MB *
+        POOL_JOBS_RESOURCES_RATIO,
+        worker_mem_gb_override=SERVE_LOCAL_API_LONG_WORKER_MEM_GB)
 
 
 @annotations.lru_cache(scope='request')

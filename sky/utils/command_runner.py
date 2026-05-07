@@ -1776,7 +1776,7 @@ class KubernetesCommandRunner(CommandRunner):
                 raise exceptions.CommandError(
                     1, ' '.join(check_cmd),
                     f'Remote source does not exist: {remote_path}',
-                    stderr=chk.stderr)
+                    detailed_reason=chk.stderr)
             source_is_dir = (kind == 'dir')
             send_dir = (remote_path if source_is_dir else
                         os.path.dirname(remote_path) or '/')
@@ -1859,7 +1859,7 @@ class KubernetesCommandRunner(CommandRunner):
                 raise exceptions.CommandError(
                     mk.returncode, ' '.join(mkdir_cmd),
                     f'Failed to mkdir remote: {mk.stderr.strip()}',
-                    stderr=mk.stderr)
+                    detailed_reason=mk.stderr)
             sender = ' '.join(tar_send)
             receiver = ' '.join(kubectl_exec + tar_recv)
         else:
