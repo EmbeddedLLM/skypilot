@@ -945,7 +945,12 @@ available_node_types:
 
                 # set UV_SYSTEM_PYTHON to false in case the user provided docker image set it to true.
                 # unset PYTHONPATH and set CWD to $HOME to avoid user image interfering with SkyPilot runtime.
-                VIRTUAL_ENV=~/skypilot-runtime UV_LINK_MODE=copy UV_SYSTEM_PYTHON=false {{sky_unset_pythonpath_and_set_cwd}} ~/.local/bin/uv pip install skypilot[kubernetes,remote]
+                # `--python` makes uv install into the venv's Python explicitly.
+                # Without it, uv has been observed to ignore VIRTUAL_ENV on
+                # images that ship a Python at non-standard prefixes (e.g. ROCm
+                # images with /opt/python in PATH), installing into the wrong
+                # interpreter or failing to find a wheel for ray's Python ABI.
+                VIRTUAL_ENV=~/skypilot-runtime UV_LINK_MODE=copy UV_SYSTEM_PYTHON=false {{sky_unset_pythonpath_and_set_cwd}} ~/.local/bin/uv pip install --python ~/skypilot-runtime/bin/python skypilot[kubernetes,remote]
                 # Wait for `patch` package to be installed before applying ray patches
                 until dpkg -l | grep -q "^ii  patch "; do
                   sleep 0.1
@@ -953,7 +958,7 @@ available_node_types:
                 done
                 # Apply Ray patches for progress bar fix
                 # ~/.sky/python_path is seeded by conda_installation_commands
-                VIRTUAL_ENV=~/skypilot-runtime UV_LINK_MODE=copy UV_SYSTEM_PYTHON=false {{sky_unset_pythonpath_and_set_cwd}} ~/.local/bin/uv pip list | grep "ray " | grep 2.9.3 2>&1 > /dev/null && {
+                VIRTUAL_ENV=~/skypilot-runtime UV_LINK_MODE=copy UV_SYSTEM_PYTHON=false {{sky_unset_pythonpath_and_set_cwd}} ~/.local/bin/uv pip list --python ~/skypilot-runtime/bin/python | grep "ray " | grep 2.9.3 2>&1 > /dev/null && {
                   {{sky_unset_pythonpath_and_set_cwd}} $(cat ~/.sky/python_path) -c "from sky.skylet.ray_patches import patch; patch()" || exit 1;
                 }
                 touch /tmp/ray_skypilot_installation_complete
