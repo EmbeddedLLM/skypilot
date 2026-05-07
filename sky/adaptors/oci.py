@@ -86,7 +86,11 @@ def with_oci_env(f):
             (f'[ -d {oci_venv_dir} ] || '
              f'uv venv --seed {oci_venv_dir} --python 3.10'),
             f'source {oci_venv_dir}/bin/activate',
-            'uv pip install oci-cli',
+            # `--python` pins uv to the venv's interpreter so user-image
+            # Python at non-standard prefixes (e.g. /opt/python in ROCm
+            # images) cannot be selected instead via uv's environment
+            # auto-discovery.
+            f'uv pip install --python {oci_venv_dir}/bin/python oci-cli',
             'export OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING=True',
         ]
         operation_cmd = [f(*args, **kwargs)]

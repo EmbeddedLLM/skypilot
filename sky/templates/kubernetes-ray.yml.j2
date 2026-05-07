@@ -1505,7 +1505,12 @@ available_node_types:
 
                 # set UV_SYSTEM_PYTHON to false in case the user provided docker image set it to true.
                 # unset PYTHONPATH and set CWD to $HOME to avoid user image interfering with SkyPilot runtime.
-                VIRTUAL_ENV=${SKY_RUNTIME_DIR:-$HOME}/skypilot-runtime UV_LINK_MODE=copy UV_SYSTEM_PYTHON=false {{sky_unset_pythonpath_and_set_cwd}} ~/.local/bin/uv pip install skypilot[kubernetes,remote]
+                # `--python` makes uv install into the venv's Python explicitly.
+                # Without it, uv has been observed to ignore VIRTUAL_ENV on
+                # images that ship a Python at non-standard prefixes (e.g. ROCm
+                # images with /opt/python in PATH), installing into the wrong
+                # interpreter or failing to find a wheel for ray's Python ABI.
+                VIRTUAL_ENV=${SKY_RUNTIME_DIR:-$HOME}/skypilot-runtime UV_LINK_MODE=copy UV_SYSTEM_PYTHON=false {{sky_unset_pythonpath_and_set_cwd}} ~/.local/bin/uv pip install --python ${SKY_RUNTIME_DIR:-$HOME}/skypilot-runtime/bin/python skypilot[kubernetes,remote]
                 # Wait (bounded) for the best-effort `patch` install to land
                 # before applying the Ray patches. An image may ship no `patch`
                 # and have no usable repo, so proceed after 60s rather than hang

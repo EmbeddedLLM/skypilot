@@ -433,7 +433,7 @@ def _run_ray_install(tmp_path,
         'exit 0\n')
     fake_uv_pip.chmod(0o755)
     full = constants.RAY_INSTALLATION_COMMANDS
-    start = full.index(f'{constants.SKY_UV_PIP_CMD} list | grep "ray "')
+    start = full.index(f'{constants.SKY_UV_PIP_LIST_CMD} | grep "ray "')
     end = full.index('exit 1; };', start) + len('exit 1; };')
     cmd = (full[start:end].replace('{ray_version}', '9.9.9').replace(
         constants.SKY_UV_PIP_CMD, str(fake_uv_pip)).replace(
