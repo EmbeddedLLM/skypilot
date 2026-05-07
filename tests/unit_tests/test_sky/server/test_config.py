@@ -105,8 +105,8 @@ def test_compute_server_config_pool(cpu_count, mem_size_gb, buildkite_mock):
     assert c.short_worker_config.burstable_parallelism == 0
     assert c.queue_backend == config.QueueBackend.MULTIPROCESSING
 
-    assert controller_utils._get_number_of_services(pool=True) == 5
-    assert controller_utils._get_request_parallelism(pool=True) == 40
+    assert controller_utils._get_number_of_services(pool=True) == 8
+    assert controller_utils._get_request_parallelism(pool=True) == 64
 
 
 def _memory_aware_sizing():
