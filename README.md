@@ -47,14 +47,16 @@
         Makes <code>get_node_accelerator_count</code> check both <code>nvidia.com/gpu</code>
         and <code>amd.com/gpu</code> resource keys so nodes with either vendor GPU report
         a non-zero accelerator count.<br>
-        <em>Note: the <code>kubernetes.py</code> resource-key selection from this patch
-        was superseded by <code>9cd2668</code>, which derives the resource key from the
-        detected label formatter instead of <code>skypilot.co/gpu</code> node labels.</em>
+        <em>Note: the original <code>kubernetes.py</code> resource-key selection from
+        this patch keyed off <code>skypilot.co/gpu</code> node labels. The
+        formatter-driven resource-key selection in <code>9cd2668</code> + the
+        mixed-cluster fix in <code>f65b71f</code> superseded that logic; this patch's
+        contribution is now the <code>get_node_accelerator_count</code> change.</em>
       </td>
     </tr>
     <tr>
       <td><b>Automatic AMD GPU detection via device plugin labels</b></td>
-      <td><code>9cd2668</code></td>
+      <td><code>9cd2668</code><br>(simplified by <code>b35db4a</code>)</td>
       <td>
         <code>sky/provision/kubernetes/utils.py</code><br>
         <code>sky/catalog/kubernetes_catalog.py</code><br>
@@ -76,7 +78,13 @@
         pod scheduling, CPU-only node selection — iterate all formatters per node,
         enabling mixed NVIDIA + AMD clusters with no extra configuration.
         Adds 33 AMD canonical GPU names (MI Instinct CDNA1–4, Radeon Pro W-series,
-        Radeon RX RDNA2/3) to the shared GPU name registry.
+        Radeon RX RDNA2/3) to the shared GPU name registry.<br>
+        <em>Follow-up <code>b35db4a</code> dropped suffix-format support
+        (<code>amd.com/gpu.product-name.&lt;NAME&gt; = "1"</code>, only emitted on
+        multi-GPU-type nodes which we don't support) and removed iGPU/APU
+        filtering, since iGPU-only nodes are valid GPU nodes under the
+        homogeneous-node assumption. Net effect: <code>AMDGPULabelFormatter</code>
+        is now structurally identical to other single-key formatters.</em>
       </td>
     </tr>
     <tr>
@@ -98,6 +106,69 @@
       </td>
     </tr>
     <tr>
+      <td><b>Fix wrong GPU resource key for NVIDIA pods in mixed clusters</b></td>
+      <td><code>f65b71f</code></td>
+      <td><code>sky/clouds/kubernetes.py</code></td>
+      <td>
+        In a mixed AMD + NVIDIA cluster, requesting an NVIDIA GPU (e.g. A4000)
+        previously put <code>amd.com/gpu</code> in the pod's resource limits
+        instead of <code>nvidia.com/gpu</code>, making the pod unschedulable —
+        NVIDIA nodes don't have <code>amd.com/gpu</code> capacity, and AMD
+        nodes don't have the right node-affinity label. Root cause: when the
+        matched label key was non-AMD (GFD, SkyPilot, etc.), the code called
+        <code>get_gpu_resource_key(context)</code>, which scans the cluster
+        and returns the first vendor key in dict-iteration order
+        (<code>amd.com/gpu</code> before <code>nvidia.com/gpu</code>); in a
+        mixed cluster this picks AMD for an NVIDIA-targeted request. Fix:
+        derive the resource key directly from the label-formatter category —
+        <code>amd.com/*</code> → <code>amd.com/gpu</code>; any other
+        recognized GPU label → <code>nvidia.com/gpu</code>; fall back to
+        <code>get_gpu_resource_key</code> only when no formatter matched.
+      </td>
+    </tr>
+    <tr>
+      <td><b>Fix GPU count display for NVIDIA replicas in mixed clusters</b></td>
+      <td><code>57c8ba2</code></td>
+      <td><code>sky/provision/kubernetes/utils.py</code></td>
+      <td>
+        <code>process_skypilot_pods</code> read each pod's <code>gpu_count</code>
+        from the cluster-default resource key
+        (<code>get_gpu_resource_key(context)</code>). In a mixed cluster this
+        is <code>amd.com/gpu</code>, so an NVIDIA pod's
+        <code>nvidia.com/gpu</code> request was missed and <code>gpu_count</code>
+        came back as 0. Effect: <code>sky status</code> / cost-report displayed
+        NVIDIA replicas as having no accelerators in mixed clusters. Replica
+        scheduling itself was correct (handled by <code>f65b71f</code>); only
+        the status display lied. Fix: iterate
+        <code>SUPPORTED_GPU_RESOURCE_KEYS.values()</code> and read whichever
+        vendor key the pod actually requested.
+      </td>
+    </tr>
+    <tr>
+      <td><b>Fix node-affinity values rendered as int for AMD GPU labels</b></td>
+      <td><code>37a0b54</code></td>
+      <td>
+        <code>sky/provision/kubernetes/utils.py</code><br>
+        <code>sky/templates/kubernetes-ray.yml.j2</code>
+      </td>
+      <td>
+        For AMD device-plugin suffix labels (e.g.
+        <code>amd.com/gpu.product-name.AMD_Radeon_RX_7900_XTX="1"</code>), the
+        Kubernetes Python client deserializes the value <code>"1"</code> as
+        Python <code>int 1</code>. The int leaked into
+        <code>k8s_acc_label_values</code> and was rendered into the
+        node-affinity <code>matchExpressions.values</code> list as a JSON
+        number, causing pod creation to fail with:
+        <code>cannot unmarshal number into Go struct field
+        NodeSelectorRequirement…values of type string</code>. Two fixes:
+        coerce the label value to <code>str</code> in
+        <code>get_accelerator_label_key_values</code> (source of truth), and
+        explicitly quote <code>{{label_value}}</code> in the j2 template as
+        defense against future int leakage. NVIDIA via GFD is unaffected
+        because GFD label values are non-numeric strings.
+      </td>
+    </tr>
+    <tr>
       <td><b>[Kubernetes] Fix podip endpoint in HA mode</b></td>
       <td><code>f3b4561</code></td>
       <td><code>sky/provision/kubernetes/network.py</code></td>
@@ -107,6 +178,99 @@
         runs as a Deployment — Kubernetes assigns random pod name suffixes so the expected
         <code>{cluster_name}-head</code> pod never exists. Fix uses label selectors instead
         of pod name lookup, working correctly for both HA and non-HA modes.
+      </td>
+    </tr>
+    <tr>
+      <td><b>[Kubernetes] Replace rsync with tar-stream for in-pod file transfer</b></td>
+      <td><code>4f1c887</code><br>(plus <code>d5731f4</code>, <code>e3237a7</code>)</td>
+      <td>
+        <code>sky/utils/command_runner.py</code><br>
+        <code>sky/utils/kubernetes/rsync_helper.sh</code>
+      </td>
+      <td>
+        rsync 3.4.x over <code>kubectl exec</code> deadlocks at session teardown on
+        Ubuntu 26 / kernel 6.8+: the data transfer completes (visible <code>100%</code>
+        in logs) but neither end ever exits, leaving the SkyServe controller stuck
+        at <em>Preparing SkyPilot runtime (1/3 - initializing)</em>. Reproduces with
+        both rsync ends at 3.4.1, with <code>--protocol=31</code>, <code>--old-args</code>,
+        <code>--whole-file</code>, <code>--inplace</code>, <code>--timeout=N</code>;
+        a one-way <code>tar -c | kubectl exec -i -- tar -x</code> works fine.
+        Override <code>KubernetesCommandRunner.rsync</code> to use a one-way tar pipeline,
+        sidestepping rsync's bidirectional teardown handshake entirely. Replicates
+        rsync features: <code>.skyignore</code>/<code>.gitignore</code> via
+        <code>--exclude-ignore</code>, <code>.git/info/exclude</code> via
+        <code>--exclude-from</code>, file-target rename via
+        <code>tar --transform='s/^src$/dst/'</code>, <code>--no-same-owner</code>
+        in lieu of <code>--no-owner --no-group</code>. Also forces SPDY transport
+        (<code>KUBECTL_REMOTE_COMMAND_WEBSOCKETS=false</code>) for any kubectl
+        subprocess, since the WebSocket transport on newer kernels deadlocks at
+        ~2-3 MB of bidirectional traffic on the same HTTP/2 stream.
+      </td>
+    </tr>
+    <tr>
+      <td><b>[Kubernetes] Fix kubectl exec hang after setup script completes</b></td>
+      <td><code>502df1c</code><br>(plus <code>32e4e61</code>)</td>
+      <td><code>sky/templates/kubernetes-ray.yml.j2</code></td>
+      <td>
+        Setup at phase 2/3 hung indefinitely on Ubuntu 26+ even though the remote
+        bash exited cleanly with rc=0. Forensic traces showed the wait stanza's
+        <code>tail -f /tmp/runtime-setup.log &amp; … kill $TAIL_PID</code> failing
+        with <code>kill: (PID) - Permission denied</code> under
+        <code>bash --login -c -i</code> — the orphaned tail kept the kubectl exec
+        stdout fd open, so the session never received EOF. Fix: use
+        <code>tail -f --pid=$$</code> so tail self-terminates when the parent
+        script exits regardless of <code>kill</code> succeeding; add
+        <code>jobs -p | xargs kill</code> + <code>pkill -P $$</code> belt-and-
+        suspenders before <code>exec 1&gt;&amp;-; exec 2&gt;&amp;-</code>. Also adds
+        forensic <code>set -x</code> tracing tee'd to
+        <code>/tmp/setup_commands_trace.log</code>, EXIT/ERR traps recording line
+        + rc + timestamp, and end-of-body marker
+        <code>===SKY_SETUP_BODY_COMPLETE===</code> for diagnosing future hangs.
+      </td>
+    </tr>
+    <tr>
+      <td><b>[Serve] Raise per-controller service capacity for k8s workloads</b></td>
+      <td><code>c6f8f23</code></td>
+      <td><code>sky/utils/controller_utils.py</code></td>
+      <td>
+        Upstream's <code>_get_number_of_services</code> reserves
+        <code>LAUNCHES_PER_SERVICE × LONG_WORKER_MEM_GB</code> (4 × 0.4 ≈ 1.6 GB)
+        per service for an embedded API server's worker pool inside the
+        controller pod, sized for slow cloud-VM launches that load heavyweight
+        cloud SDKs. With 8 GB controller memory this caps services at 2.
+        For k8s-mostly deployments where replica launches are pod-create operations,
+        this is excessive. Lower <code>LAUNCHES_PER_SERVICE</code> 4 → 2 and
+        introduce <code>SERVE_LOCAL_API_LONG_WORKER_MEM_GB = 0.25</code> (separate
+        knob from the global <code>LONG_WORKER_MEM_GB</code>, so it doesn't affect
+        the central API server's worker pool). Per-service cost drops from
+        ~2.1 GB to ~1.0 GB. Capacity:
+        8 GB → 6 services (was 2), 16 GB → 14, 32 GB → 30. Tradeoff: a service
+        firing &gt;2 simultaneous replica launches will queue.
+      </td>
+    </tr>
+    <tr>
+      <td><b>Pin uv pip to runtime venv's Python via <code>--python</code> flag</b></td>
+      <td><code>78fe751</code></td>
+      <td>
+        <code>sky/skylet/constants.py</code><br>
+        <code>sky/templates/kubernetes-ray.yml.j2</code><br>
+        <code>sky/adaptors/oci.py</code>
+      </td>
+      <td>
+        uv's environment auto-discovery is unreliable on user-provided Docker
+        images that ship a Python interpreter at a non-standard prefix
+        (e.g. ROCm images with <code>/opt/python</code> python-build-standalone
+        layouts in <code>PATH</code>). <code>VIRTUAL_ENV</code> is silently ignored
+        and uv resolves against the image's Python: on Python 3.12 base images
+        ray 2.9.3 install hard-fails (<em>no wheels with a matching Python ABI
+        tag (cp312)</em>); on 3.10/3.11 base images uv silently mutates the
+        wrong Python's site-packages without erroring. Add
+        <code>--python &lt;venv&gt;/bin/python</code> to every uv pip
+        install/uninstall/list and <code>uv run</code> invocation that targets
+        the SkyPilot runtime venv. Centralised via new
+        <code>SKY_UV_PIP_INSTALL_CMD</code> / <code>UNINSTALL</code> /
+        <code>LIST</code> constants. Strict improvement on working images
+        (same end state, no longer mutates system Python); enables broken images.
       </td>
     </tr>
   </tbody>
@@ -175,7 +339,17 @@ git checkout -b ellm-{new_version}
 git cherry-pick 493fb1f  # Enable dual GPU in a single API server
 git cherry-pick f3b4561  # Fix podip endpoint in HA mode
 git cherry-pick 9cd2668  # Automatic AMD GPU detection via device plugin labels
+git cherry-pick b35db4a  # Drop suffix-format + iGPU filtering (simplifies 9cd2668)
+git cherry-pick f65b71f  # Fix wrong GPU resource key for NVIDIA pods in mixed clusters
+git cherry-pick 57c8ba2  # Fix GPU count display for NVIDIA replicas in mixed clusters
+git cherry-pick 37a0b54  # Fix node-affinity values rendered as int for AMD GPU labels
 git cherry-pick e9581a9  # Fix pod scheduling for mixed NVIDIA + AMD clusters
+# Replace rsync with tar-stream for in-pod transfer (3 commits, in order):
+git cherry-pick d5731f4 e3237a7 4f1c887
+# Fix kubectl exec hang at end of setup script (2 commits, in order):
+git cherry-pick 32e4e61 502df1c
+git cherry-pick c6f8f23  # Raise per-controller service capacity for k8s
+git cherry-pick 78fe751  # Pin uv pip to runtime venv via --python
 # Resolve any conflicts if upstream changed the same files
 
 # 4. Push new branch
