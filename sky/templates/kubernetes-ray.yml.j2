@@ -1498,18 +1498,16 @@ setup_commands:
     # Also send a recognizable marker line to stdout for the api-server to see.
     echo "===SKY_SETUP_BODY_COMPLETE==="
     set +x
-    # Defensive: kill any background descendants of this script (e.g. the
-    # tail -f from the wait stanzas) before closing stdout/stderr, so they
-    # don't keep the kubectl exec stream open after we exit. The
-    # `tail --pid=$$` flag is the primary defence; this is belt-and-
-    # suspenders for any new background commands that may be added.
-    jobs -p | xargs -r kill 2>/dev/null || true
-    pkill -P $$ 2>/dev/null || true
-    # Explicitly close stdout/stderr before bash exits, so kubectl exec's
-    # stdout/stderr streams reach EOF promptly. Without this, an interactive
-    # bash (-i) can leave async writes pending and delay EOF.
-    exec 1>&-
-    exec 2>&-
+    # Note: previously this had `jobs -p | xargs kill`, `pkill -P $$`, and
+    # `exec 1>&-; exec 2>&-` as belt-and-suspenders against orphaned tail
+    # holding the kubectl exec stdout open. They turned out to break the
+    # `tee` process-substitution chain (which is fd 1 here) mid-shutdown
+    # — kubectl exec saw stdout torn down before bash actually exited and
+    # SIGTERM'd the bash, returning rc=143 instead of 0.
+    #
+    # The `tail -f --pid=$$` change in the wait stanzas is sufficient on
+    # its own: tail self-terminates when this script's PID exits, so no
+    # orphan keeps the kubectl exec stream open. Don't add cleanup here.
 
 # Format: `REMOTE_PATH : LOCAL_PATH`
 file_mounts: {
