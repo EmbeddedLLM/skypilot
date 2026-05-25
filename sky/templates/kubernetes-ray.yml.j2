@@ -1384,7 +1384,19 @@ available_node_types:
                         # which caused 'Operation not permitted' errors on the PVC root directory (/mnt/home).
                         # Owner/group preservation (-o, -g) is also skipped (default for -rl), ensuring
                         # files are owned by the container's user/group.
-                        rsync -rl "$SOURCE_PATH/" "$DEST_PATH"
+                        #
+                        # --delete: if the marker is missing, treat the PVC as needing a
+                        # fresh start. A previous controller pod can crash mid-install
+                        # (e.g. miniconda half-extracted, skypilot-runtime venv missing
+                        # bin/python) before the marker is written; on restart the PVC
+                        # still has the partial files. Without --delete, this initContainer
+                        # just overlays image files on top, leaving the corruption in place
+                        # — downstream `which conda` finds a broken conda binary, skips
+                        # reinstall, and the runtime-setup step crashes. With --delete,
+                        # the PVC is mirrored to the image's /home/sky contents on each
+                        # un-marked start, so a crashed mid-install can't poison subsequent
+                        # starts.
+                        rsync -rl --delete "$SOURCE_PATH/" "$DEST_PATH"
 
                         # Check if rsync failed
                         if [ $? -ne 0 ]; then
