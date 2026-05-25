@@ -228,18 +228,8 @@ SETUP_SKY_DIRS_COMMANDS = (f'mkdir -p ~/sky_workdir && '
 # We use python 3.10 to be consistent with the python version of the
 # AWS's Deep Learning AMI's default conda environment.
 CONDA_INSTALLATION_COMMANDS = (
-    # Validate that conda *runs*, not just that the binary exists. A
-    # half-installed conda from a previous crashed setup run can leave a
-    # binary on the PVC with an unrelocated shebang (e.g.
-    # `#!/croot/conda_…/_h_env_placehold…/bin/python`) which `which`
-    # treats as present but every invocation fails with "command not
-    # found" because the shebang's python path doesn't exist. In that
-    # case we must reinstall — but the Miniconda installer refuses to
-    # overwrite an existing prefix, so we also wipe the broken dir first.
-    f'(command -v conda >/dev/null 2>&1 && conda --version >/dev/null 2>&1) || '
+    'which conda > /dev/null 2>&1 || '
     '{ '
-    f'echo "conda not functional; reinstalling miniconda at {SKY_CONDA_ROOT}"; '
-    f'rm -rf "{SKY_CONDA_ROOT}"; '
     # Use uname -m to get the architecture of the machine and download the
     # corresponding Miniconda3-Linux.sh script.
     # Download to /tmp to ensure write access for non-root users.
@@ -274,18 +264,7 @@ UV_INSTALLATION_COMMANDS = (
     # Install uv for venv management and pip installation.
     f'{SKY_UV_INSTALL_CMD};'
     # Create a separate python environment for SkyPilot dependencies.
-    #
-    # Validate that the venv *works*, not just that the directory exists.
-    # A previous crashed install can leave a directory with partial
-    # contents (no bin/python, or a broken bin/python whose interpreter
-    # files were truncated). `uv pip install --python <venv>/bin/python`
-    # downstream then fails with "No virtual environment or system Python
-    # installation found for path". Test the interpreter end-to-end and
-    # rebuild the venv if it doesn't run.
-    f'([ -x {SKY_REMOTE_PYTHON_ENV}/bin/python ] && '
-    f'{SKY_REMOTE_PYTHON_ENV}/bin/python -c "import sys" >/dev/null 2>&1) || '
-    f'{{ echo "skypilot-runtime venv not functional; recreating"; '
-    f'rm -rf {SKY_REMOTE_PYTHON_ENV}; '
+    f'[ -d {SKY_REMOTE_PYTHON_ENV} ] || '
     # Do NOT use --system-site-packages here, because if users upgrade any
     # packages in the base env, they interfere with skypilot dependencies.
     # Reference: https://github.com/skypilot-org/skypilot/issues/4097
@@ -298,7 +277,7 @@ UV_INSTALLATION_COMMANDS = (
     # uv to use the python version specified in the `.python_version` file.
     # TODO(zhwu): consider adding --python-preference only-managed to avoid
     # using the system python, if a user report such issue.
-    f'{SKY_UV_CMD} venv --seed {SKY_REMOTE_PYTHON_ENV} --python 3.10; }};'
+    f'{SKY_UV_CMD} venv --seed {SKY_REMOTE_PYTHON_ENV} --python 3.10;'
     f'echo "$(echo {SKY_REMOTE_PYTHON_ENV})/bin/python" > {SKY_PYTHON_PATH_FILE};'  # pylint: disable=line-too-long
 )
 
