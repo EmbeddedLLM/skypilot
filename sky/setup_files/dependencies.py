@@ -159,8 +159,11 @@ aws_dependencies = [
 
 # Kubernetes 32.0.0 has an authentication bug:
 # https://github.com/kubernetes-client/python/issues/2333
+# Kubernetes 36.0.0 drops the Authorization header for in-cluster
+# config, causing 401s from the apiserver. Fixed in 36.0.1:
+# https://github.com/kubernetes-client/python/pull/2585
 kubernetes_dependencies = [
-    'kubernetes>=20.0.0,!=32.0.0',
+    'kubernetes>=20.0.0,!=32.0.0,!=36.0.0',
     'websockets',
     'python-dateutil',
 ]
