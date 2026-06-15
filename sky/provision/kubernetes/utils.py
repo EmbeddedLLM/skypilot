@@ -2245,8 +2245,11 @@ class PodValidator:
                 sub_kls = match.group(1)
                 return [cls.__validate(sub_data, sub_kls) for sub_data in data]
 
-            if klass.startswith('dict('):
-                match = re.match(r'dict\(([^,]*), (.*)\)', klass)
+            # kubernetes client <36 emits map types as 'dict(str, V)';
+            # >=36 regenerated models use PEP 585 style 'dict[str, V]'.
+            # Accept both bracket styles.
+            if klass.startswith('dict(') or klass.startswith('dict['):
+                match = re.match(r'dict[(\[]([^,]*), (.*)[)\]]', klass)
                 if match is None:
                     raise ValueError(f'Invalid dict type format: {klass}')
                 sub_kls = match.group(2)
