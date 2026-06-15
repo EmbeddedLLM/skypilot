@@ -273,6 +273,28 @@
         (same end state, no longer mutates system Python); enables broken images.
       </td>
     </tr>
+    <tr>
+      <td><b>[Kubernetes] Exclude <code>kubernetes==36.0.0</code> (in-cluster auth regression)</b></td>
+      <td><code>69b0a69</code></td>
+      <td><code>sky/setup_files/dependencies.py</code></td>
+      <td>
+        The <code>kubernetes</code> Python client <code>36.0.0</code> restructured
+        bearer-token storage: <code>Configuration.auth_settings()</code> reads the
+        token from <code>api_key['BearerToken']</code>, but
+        <code>load_incluster_config()</code> still writes it to the old
+        <code>api_key['authorization']</code> key. Result: in-cluster pods send
+        every request with <b>no</b> <code>Authorization</code> header and the
+        apiserver rejects them as <code>system:anonymous</code> → <code>401</code>,
+        surfacing as <code>sky check</code> reporting <em>"Invalid credentials"</em>
+        even though the ServiceAccount token, RBAC, and cluster are all healthy.
+        Because <code>dependencies.py</code> only floored the version
+        (<code>&gt;=20.0.0,!=32.0.0</code>), a fresh image build picked up the
+        just-released 36.0.0 and broke the API server. Fix: extend the exclusion to
+        <code>!=32.0.0,!=36.0.0</code>. Upstream fixed it in 36.0.1
+        (<a href="https://github.com/kubernetes-client/python/pull/2585">PR #2585</a>);
+        the resolver now lands on 36.0.2+.
+      </td>
+    </tr>
   </tbody>
 </table>
 
@@ -350,6 +372,7 @@ git cherry-pick d5731f4 e3237a7 4f1c887
 git cherry-pick 32e4e61 502df1c
 git cherry-pick c6f8f23  # Raise per-controller service capacity for k8s
 git cherry-pick 78fe751  # Pin uv pip to runtime venv via --python
+git cherry-pick 69b0a69  # Exclude kubernetes==36.0.0 (in-cluster auth regression)
 # Resolve any conflicts if upstream changed the same files
 
 # 4. Push new branch
