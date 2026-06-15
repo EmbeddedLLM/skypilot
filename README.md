@@ -295,6 +295,28 @@
         the resolver now lands on 36.0.2+.
       </td>
     </tr>
+    <tr>
+      <td><b>[Kubernetes] Accept PEP 585 <code>dict[K, V]</code> type strings in pod_config validator</b></td>
+      <td><code>827ff42</code></td>
+      <td><code>sky/provision/kubernetes/utils.py</code></td>
+      <td>
+        Second fallout from the <code>kubernetes</code> client <code>36.x</code>
+        upgrade (companion to the <code>!=36.0.0</code> exclusion above, which lands
+        the resolver on 36.0.2). The 36.x models were regenerated with PEP 585 type
+        strings, so map fields like <code>metadata.labels</code> now declare their
+        type as <code>dict[str, str]</code> (square brackets) instead of the old
+        <code>dict(str, str)</code> (parentheses). SkyPilot's hand-rolled
+        <code>PodValidator</code> (a reimplementation of the client's deserializer)
+        only matched the parenthesized form, so the bracket form fell through to the
+        model-import path and failed with
+        <code>No module named 'kubernetes.client.models.dict[str, str]'</code>,
+        breaking <code>sky serve up</code> / <code>sky launch</code> at pod_config
+        validation. Fix: match both <code>dict(</code> and <code>dict[</code> and
+        parse either closing bracket. Note <code>dict_to_k8s_object()</code> is
+        unaffected — it delegates to the client's own (self-consistent)
+        <code>deserialize()</code> rather than reimplementing it.
+      </td>
+    </tr>
   </tbody>
 </table>
 
@@ -373,6 +395,7 @@ git cherry-pick 32e4e61 502df1c
 git cherry-pick c6f8f23  # Raise per-controller service capacity for k8s
 git cherry-pick 78fe751  # Pin uv pip to runtime venv via --python
 git cherry-pick 69b0a69  # Exclude kubernetes==36.0.0 (in-cluster auth regression)
+git cherry-pick 827ff42  # Accept PEP 585 dict[K,V] type strings in pod_config validator
 # Resolve any conflicts if upstream changed the same files
 
 # 4. Push new branch
