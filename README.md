@@ -123,7 +123,10 @@
         derive the resource key directly from the label-formatter category —
         <code>amd.com/*</code> → <code>amd.com/gpu</code>; any other
         recognized GPU label → <code>nvidia.com/gpu</code>; fall back to
-        <code>get_gpu_resource_key</code> only when no formatter matched.
+        <code>get_gpu_resource_key</code> only when no formatter matched.<br>
+        <em>Superseded by <code>8666818a</code>, which resolves the resource key
+        from matching nodes' capacity so Intel and manually labeled AMD nodes
+        are no longer treated as NVIDIA.</em>
       </td>
     </tr>
     <tr>
@@ -317,6 +320,34 @@
         <code>deserialize()</code> rather than reimplementing it.
       </td>
     </tr>
+    <tr>
+      <td><b>[Kubernetes] Add Intel GPU discovery and resource selection</b></td>
+      <td><code>8666818a</code></td>
+      <td>
+        <code>sky/provision/kubernetes/utils.py</code><br>
+        <code>sky/clouds/kubernetes.py</code><br>
+        <code>tests/unit_tests/kubernetes/test_intel_gpu_discovery.py</code><br>
+        <code>docs/source/reference/kubernetes/intel-gpu.rst</code><br>
+        <code>docs/source/compute/gpus.rst</code>
+      </td>
+      <td>
+        Recognizes <code>gpu.intel.com/i915</code> and
+        <code>gpu.intel.com/xe</code> resources for GPU discovery and counting,
+        excluding Intel monitoring resources. Adds
+        <code>IntelGPULabelFormatter</code> for NFD
+        <code>gpu.intel.com/product</code> labels (e.g.
+        <code>Flex_170</code> → <code>Intel-Flex-170</code>).
+        Arc and integrated GPUs without product labels require a manual
+        <code>skypilot.co/accelerator</code> label; PCI-ID-to-model mapping is
+        not included. Retains the single-GPU-model-per-node assumption.<br>
+        Selects pod GPU resource keys from matching nodes' capacity instead
+        of assuming non-AMD labels mean NVIDIA, superseding
+        <code>f65b71f</code>. Rejects ambiguous matches exposing multiple GPU
+        resource types and preserves the explicit
+        <code>CUSTOM_GPU_RESOURCE_KEY</code> override.
+        Includes regression tests and setup/manual verification instructions.
+      </td>
+    </tr>
   </tbody>
 </table>
 
@@ -396,6 +427,7 @@ git cherry-pick c6f8f23  # Raise per-controller service capacity for k8s
 git cherry-pick 78fe751  # Pin uv pip to runtime venv via --python
 git cherry-pick 69b0a69  # Exclude kubernetes==36.0.0 (in-cluster auth regression)
 git cherry-pick 827ff42  # Accept PEP 585 dict[K,V] type strings in pod_config validator
+git cherry-pick 8666818a  # Intel GPU discovery and resource selection from matching nodes
 # Resolve any conflicts if upstream changed the same files
 
 # 4. Push new branch
