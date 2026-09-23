@@ -317,6 +317,38 @@
         <code>deserialize()</code> rather than reimplementing it.
       </td>
     </tr>
+    <tr>
+      <td><b>[Kubernetes] Add Intel GPU discovery and resource selection</b></td>
+      <td><code>5420c46</code></td>
+      <td>
+        <code>sky/provision/kubernetes/utils.py</code><br>
+        <code>sky/clouds/kubernetes.py</code><br>
+        <code>docs/source/reference/kubernetes/intel-gpu.rst</code><br>
+        <code>docs/source/compute/gpus.rst</code><br>
+        <code>Dockerfile</code>
+      </td>
+      <td>
+        Adds Intel GPU discovery and counting through
+        <code>gpu.intel.com/xe</code>. The new
+        <code>IntelGPULabelFormatter</code> reads
+        <code>gpu.intel.com/product</code> labels and normalizes model names
+        (e.g. <code>Flex_170</code> → <code>Intel-Flex-170</code>).
+        Arc and integrated GPUs without a product label can use an explicit
+        <code>skypilot.co/accelerator</code> label. Each node must expose a
+        single GPU model and resource type; monitoring resources are not
+        counted as GPUs.<br>
+        Replaces the formatter-category resource selection from
+        <code>f65b71f</code> with a lookup of capacity on nodes matching the
+        accelerator label, supporting mixed Intel + NVIDIA + AMD clusters
+        and rejecting ambiguous resource selections. Automatic Intel resource
+        selection requires an existing node advertising capacity; an explicit
+        <code>CUSTOM_GPU_RESOURCE_KEY=gpu.intel.com/xe</code> supports
+        resource selection when scaling from zero.<br>
+        Adds an Intel GPU setup and manual verification guide, links it from
+        the GPU documentation, and updates the Dockerfile's dashboard build
+        stage from Node.js 20 to 22.
+      </td>
+    </tr>
   </tbody>
 </table>
 
@@ -396,6 +428,7 @@ git cherry-pick c6f8f23  # Raise per-controller service capacity for k8s
 git cherry-pick 78fe751  # Pin uv pip to runtime venv via --python
 git cherry-pick 69b0a69  # Exclude kubernetes==36.0.0 (in-cluster auth regression)
 git cherry-pick 827ff42  # Accept PEP 585 dict[K,V] type strings in pod_config validator
+git cherry-pick 5420c46  # Intel xe GPU discovery and resource selection
 # Resolve any conflicts if upstream changed the same files
 
 # 4. Push new branch
