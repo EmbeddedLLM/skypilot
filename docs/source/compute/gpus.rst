@@ -95,9 +95,15 @@ AMD GPUs
 
 See :ref:`kubernetes-amd-gpu`.
 
+Intel GPUs
+----------
+
+See :ref:`kubernetes-intel-gpu`.
+
 .. toctree::
    :maxdepth: 1
    :hidden:
 
    Using Google TPUs <../../reference/tpu>
    Using AMD GPUs <../../reference/kubernetes/amd-gpu>
+   Using Intel GPUs <../../reference/kubernetes/intel-gpu>
