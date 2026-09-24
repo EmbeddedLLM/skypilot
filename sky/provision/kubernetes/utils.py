@@ -797,8 +797,8 @@ class AMDGPULabelFormatter(GPULabelFormatter):
 class IntelGPULabelFormatter(GPULabelFormatter):
     """Intel NFD product labels on nodes exposing a single GPU model.
 
-    Arc and integrated GPUs without a product label can use an explicit
-    skypilot.co/accelerator label instead.
+    e.g. gpu.intel.com/product=Arc_Pro_B60 -> Intel-Arc-Pro-B60. Only nodes
+    exposing the gpu.intel.com/xe resource are supported.
     """
 
     LABEL_KEY = 'gpu.intel.com/product'
@@ -3381,8 +3381,7 @@ def get_unlabeled_accelerator_nodes(context: Optional[str] = None) -> List[Any]:
             continue
         node_label_keys = set(node.metadata.labels or {})
         labeled = any(
-            fmt.match_label_key(lk)
-            for lk in node_label_keys
+            fmt.match_label_key(lk) for lk in node_label_keys
             for fmt in LABEL_FORMATTER_REGISTRY)
         if not labeled:
             unlabeled_nodes.append(node)
@@ -3833,7 +3832,6 @@ def is_tpu_on_gke(accelerator: str, normalize: bool = True) -> bool:
 
 def get_node_accelerator_count(context: Optional[str],
                                attribute_dict: dict) -> int:
-    # pylint: disable=unused-argument
     """Retrieves the count of accelerators from a node's resource dictionary.
 
     This method checks the node's allocatable resources or the accelerators
@@ -3848,9 +3846,11 @@ def get_node_accelerator_count(context: Optional[str],
         Number of accelerators allocated or available from the node. If no
             resource is found, it returns 0.
     """
+    gpu_resource_name = get_gpu_resource_key(context)
+    assert not (gpu_resource_name in attribute_dict and
+                TPU_RESOURCE_KEY in attribute_dict)
     for gpu_resource in SUPPORTED_GPU_RESOURCE_KEYS.values():
         if gpu_resource in attribute_dict:
-            assert TPU_RESOURCE_KEY not in attribute_dict
             return int(attribute_dict[gpu_resource])
     if TPU_RESOURCE_KEY in attribute_dict:
         return int(attribute_dict[TPU_RESOURCE_KEY])

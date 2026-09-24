@@ -587,6 +587,15 @@ class Kubernetes(clouds.Cloud):
                 tpu_requested = True
                 k8s_resource_key = kubernetes_utils.TPU_RESOURCE_KEY
             else:
+                # Derive resource key from the matched label key.
+                # AMD device plugin labels start with 'amd.com/'; Intel NFD
+                # product labels map to the Xe resource; all other
+                # recognized GPU label formatters (GFD, SkyPilot, GKE,
+                # Karpenter, CoreWeave, Nebius) are for NVIDIA GPUs.
+                # We must NOT fall back to get_gpu_resource_key(context) here:
+                # in a mixed cluster it scans nodes and returns the first
+                # vendor key found (amd.com/gpu before nvidia.com/gpu),
+                # which would put an amd.com/gpu request on an NVIDIA pod.
                 if (k8s_acc_label_key is not None and
                         k8s_acc_label_key.startswith('amd.com/')):
                     k8s_resource_key = (
@@ -599,6 +608,7 @@ class Kubernetes(clouds.Cloud):
                     k8s_resource_key = (
                         kubernetes_utils.SUPPORTED_GPU_RESOURCE_KEYS['nvidia'])
                 else:
+                    # Fallback if no label formatter matched (unusual).
                     k8s_resource_key = kubernetes_utils.get_gpu_resource_key(
                         context)
         else:

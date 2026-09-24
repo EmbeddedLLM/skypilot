@@ -328,19 +328,15 @@
       </td>
       <td>
         Adds Intel GPU discovery and counting through
-        <code>gpu.intel.com/xe</code>. The new
-        <code>IntelGPULabelFormatter</code> reads
+        <code>gpu.intel.com/xe</code> (<code>xe</code> driver only;
+        <code>i915</code> GPUs are not supported). The new
+        <code>IntelGPULabelFormatter</code> reads NFD
         <code>gpu.intel.com/product</code> labels and normalizes model names
-        (e.g. <code>Flex_170</code> → <code>Intel-Flex-170</code>).
-        Arc and integrated GPUs without a product label can use an explicit
-        <code>skypilot.co/accelerator</code> label. Each node must expose a
-        single GPU model and resource type; monitoring resources are not
-        counted as GPUs.<br>
-        Selects the Xe resource from Intel product labels or generic SkyPilot
-        accelerator labels beginning with <code>intel-</code>, supporting mixed
-        Intel + NVIDIA + AMD clusters. Generic autoscaling can select the
-        resource without an existing GPU node or a custom-resource override;
-        the autoscaler must have a matching Xe node pool configured.<br>
+        (e.g. <code>Arc_Pro_B60</code> → <code>Intel-Arc-Pro-B60</code>);
+        B-series product labels need Intel device plugin NFD rules v0.37.0+.<br>
+        Pods for Intel product labels request <code>gpu.intel.com/xe</code>,
+        alongside the existing AMD/NVIDIA label-key selection, so mixed
+        clusters and autoscaling without an existing GPU node work.<br>
         Adds an Intel GPU setup and manual verification guide and links it
         from the GPU documentation.
       </td>
