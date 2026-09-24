@@ -592,10 +592,7 @@ class Kubernetes(clouds.Cloud):
                     k8s_resource_key = (
                         kubernetes_utils.SUPPORTED_GPU_RESOURCE_KEYS['amd'])
                 elif (k8s_acc_label_key
-                      == kubernetes_utils.IntelGPULabelFormatter.LABEL_KEY or
-                      (k8s_acc_label_key
-                       == kubernetes_utils.SkyPilotLabelFormatter.LABEL_KEY and
-                       acc_type.lower().startswith('intel-'))):
+                      == kubernetes_utils.IntelGPULabelFormatter.LABEL_KEY):
                     k8s_resource_key = (kubernetes_utils.
                                         SUPPORTED_GPU_RESOURCE_KEYS['intel_xe'])
                 elif k8s_acc_label_key is not None:
