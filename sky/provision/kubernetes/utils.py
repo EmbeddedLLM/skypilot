@@ -828,8 +828,6 @@ class IntelGPULabelFormatter(GPULabelFormatter):
     @classmethod
     def get_accelerator_from_label_value(cls, value: str) -> str:
         name = value.strip().replace('_', '-').replace(' ', '-')
-        if name.lower().startswith('intel-'):
-            name = name[6:]
         return f'Intel-{name}'
 
 
@@ -1414,11 +1412,8 @@ def detect_accelerator_resource(
     nodes = get_kubernetes_nodes(context=context)
     for node in nodes:
         cluster_resources.update(node.status.allocatable.keys())
-    resource_keys = {TPU_RESOURCE_KEY, *SUPPORTED_GPU_RESOURCE_KEYS.values()}
-    custom_key = os.getenv('CUSTOM_GPU_RESOURCE_KEY')
-    if custom_key:
-        resource_keys.add(custom_key)
-    has_accelerator = bool(resource_keys.intersection(cluster_resources))
+    has_accelerator = (get_gpu_resource_key(context) in cluster_resources or
+                       TPU_RESOURCE_KEY in cluster_resources)
 
     return has_accelerator, cluster_resources
 
@@ -3386,7 +3381,8 @@ def get_unlabeled_accelerator_nodes(context: Optional[str] = None) -> List[Any]:
             continue
         node_label_keys = set(node.metadata.labels or {})
         labeled = any(
-            fmt.match_label_key(lk) for lk in node_label_keys
+            fmt.match_label_key(lk)
+            for lk in node_label_keys
             for fmt in LABEL_FORMATTER_REGISTRY)
         if not labeled:
             unlabeled_nodes.append(node)
@@ -3837,6 +3833,7 @@ def is_tpu_on_gke(accelerator: str, normalize: bool = True) -> bool:
 
 def get_node_accelerator_count(context: Optional[str],
                                attribute_dict: dict) -> int:
+    # pylint: disable=unused-argument
     """Retrieves the count of accelerators from a node's resource dictionary.
 
     This method checks the node's allocatable resources or the accelerators
@@ -3851,14 +3848,10 @@ def get_node_accelerator_count(context: Optional[str],
         Number of accelerators allocated or available from the node. If no
             resource is found, it returns 0.
     """
-    resource_keys = set(SUPPORTED_GPU_RESOURCE_KEYS.values())
-    custom_key = os.getenv('CUSTOM_GPU_RESOURCE_KEY')
-    if custom_key:
-        resource_keys.add(custom_key)
-    gpu_count = sum(int(attribute_dict.get(key, 0)) for key in resource_keys)
-    assert not (gpu_count and TPU_RESOURCE_KEY in attribute_dict)
-    if gpu_count:
-        return gpu_count
+    for gpu_resource in SUPPORTED_GPU_RESOURCE_KEYS.values():
+        if gpu_resource in attribute_dict:
+            assert TPU_RESOURCE_KEY not in attribute_dict
+            return int(attribute_dict[gpu_resource])
     if TPU_RESOURCE_KEY in attribute_dict:
         return int(attribute_dict[TPU_RESOURCE_KEY])
     return 0
@@ -4081,45 +4074,6 @@ def process_skypilot_pods(
         num_pods = len(cluster.pods)
         cluster.resources_str = f'{num_pods}x {cluster.resources}'
     return list(clusters.values()), jobs_controllers, serve_controllers
-
-
-def get_gpu_resource_key_for_labels(context: Optional[str],
-                                    label_key: str,
-                                    label_values: List[str]) -> str:
-    """Resolve a resource from matching nodes, rather than the whole cluster.
-
-    A pod can request only one resource key. Refuse ambiguous selections rather
-    than requesting one driver's resources for nodes using another driver.
-    """
-    custom_key = os.getenv('CUSTOM_GPU_RESOURCE_KEY')
-    if custom_key:
-        return custom_key
-    resource_keys = set()
-    for node in get_kubernetes_nodes(context=context):
-        if (node.metadata.labels or {}).get(label_key) not in label_values:
-            continue
-        capacity = node.status.capacity or {}
-        resource_keys.update(
-            key for key in SUPPORTED_GPU_RESOURCE_KEYS.values()
-            if int(capacity.get(key, 0)) > 0)
-    if len(resource_keys) == 1:
-        return next(iter(resource_keys))
-    if resource_keys:
-        raise exceptions.ResourcesUnavailableError(
-            f'Nodes matching {label_key}={label_values} expose multiple GPU '
-            f'resource types: {sorted(resource_keys)}. Use a distinct accelerator '
-            'label for nodes with a single GPU resource type.')
-    # Preserve scale-from-zero behavior for existing label formats. Intel
-    # product labels do not identify which kernel driver will be used.
-    if (label_key.startswith('gpu.intel.com/') or
-            (label_key == SkyPilotLabelFormatter.LABEL_KEY and
-             any(value.lower().startswith('intel-') for value in label_values))):
-        raise exceptions.ResourcesUnavailableError(
-            'Cannot determine the Intel GPU resource type from matching nodes. '
-            'Install the Intel GPU device plugin and verify node capacity.')
-    if label_key.startswith('amd.com/'):
-        return SUPPORTED_GPU_RESOURCE_KEYS['amd']
-    return SUPPORTED_GPU_RESOURCE_KEYS['nvidia']
 
 
 def _gpu_resource_key_helper(context: Optional[str]) -> str:

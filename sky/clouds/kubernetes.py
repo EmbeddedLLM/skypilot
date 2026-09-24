@@ -587,11 +587,20 @@ class Kubernetes(clouds.Cloud):
                 tpu_requested = True
                 k8s_resource_key = kubernetes_utils.TPU_RESOURCE_KEY
             else:
-                if k8s_acc_label_key is not None:
+                if (k8s_acc_label_key is not None and
+                        k8s_acc_label_key.startswith('amd.com/')):
                     k8s_resource_key = (
-                        kubernetes_utils.get_gpu_resource_key_for_labels(
-                            context, k8s_acc_label_key,
-                            k8s_acc_label_values or []))
+                        kubernetes_utils.SUPPORTED_GPU_RESOURCE_KEYS['amd'])
+                elif (k8s_acc_label_key
+                      == kubernetes_utils.IntelGPULabelFormatter.LABEL_KEY or
+                      (k8s_acc_label_key
+                       == kubernetes_utils.SkyPilotLabelFormatter.LABEL_KEY and
+                       acc_type.lower().startswith('intel-'))):
+                    k8s_resource_key = (kubernetes_utils.
+                                        SUPPORTED_GPU_RESOURCE_KEYS['intel_xe'])
+                elif k8s_acc_label_key is not None:
+                    k8s_resource_key = (
+                        kubernetes_utils.SUPPORTED_GPU_RESOURCE_KEYS['nvidia'])
                 else:
                     k8s_resource_key = kubernetes_utils.get_gpu_resource_key(
                         context)

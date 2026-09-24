@@ -5,7 +5,8 @@ Using Intel GPUs on Kubernetes
 
 SkyPilot discovers Intel GPUs through Kubernetes node resources and labels.
 Only the ``gpu.intel.com/xe`` resource is supported for Intel GPUs. Monitoring
-resources are not counted as GPUs.
+resources are not counted as GPUs. Nodes using ``gpu.intel.com/i915`` are not
+supported by this integration.
 
 Cluster setup
 -------------
@@ -30,6 +31,10 @@ Intel NFD product labels are recognized automatically:
 
    gpu.intel.com/product=Flex_170  -> Intel-Flex-170
    gpu.intel.com/product=Max_1550  -> Intel-Max-1550
+
+These examples describe label formatting, not driver compatibility. A product
+label does not identify the kernel driver; the node must also expose
+``gpu.intel.com/xe`` to be usable with this integration.
 
 For Arc or integrated GPUs without an NFD product label, add a lowercase
 SkyPilot label identifying the GPU actually exposed by the device plugin:
@@ -64,8 +69,8 @@ After installing this version, restart the API server to pick up the changes:
    sky show-gpus --infra kubernetes
 
 Verify that each Intel node advertises ``gpu.intel.com/xe`` and has a product
-or SkyPilot accelerator label. The GPU
-listing should show the corresponding model and allocatable count. Repeat with
+or SkyPilot accelerator label. The GPU listing should show the corresponding
+model and allocatable count. Repeat with
 NVIDIA and AMD nodes in the same cluster and confirm their counts are unchanged.
 
 For a launch using an Intel-compatible image and the discovered accelerator,

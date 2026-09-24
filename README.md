@@ -324,8 +324,7 @@
         <code>sky/provision/kubernetes/utils.py</code><br>
         <code>sky/clouds/kubernetes.py</code><br>
         <code>docs/source/reference/kubernetes/intel-gpu.rst</code><br>
-        <code>docs/source/compute/gpus.rst</code><br>
-        <code>Dockerfile</code>
+        <code>docs/source/compute/gpus.rst</code>
       </td>
       <td>
         Adds Intel GPU discovery and counting through
@@ -337,16 +336,13 @@
         <code>skypilot.co/accelerator</code> label. Each node must expose a
         single GPU model and resource type; monitoring resources are not
         counted as GPUs.<br>
-        Replaces the formatter-category resource selection from
-        <code>f65b71f</code> with a lookup of capacity on nodes matching the
-        accelerator label, supporting mixed Intel + NVIDIA + AMD clusters
-        and rejecting ambiguous resource selections. Automatic Intel resource
-        selection requires an existing node advertising capacity; an explicit
-        <code>CUSTOM_GPU_RESOURCE_KEY=gpu.intel.com/xe</code> supports
-        resource selection when scaling from zero.<br>
-        Adds an Intel GPU setup and manual verification guide, links it from
-        the GPU documentation, and updates the Dockerfile's dashboard build
-        stage from Node.js 20 to 22.
+        Selects the Xe resource from Intel product labels or generic SkyPilot
+        accelerator labels beginning with <code>intel-</code>, supporting mixed
+        Intel + NVIDIA + AMD clusters. Generic autoscaling can select the
+        resource without an existing GPU node or a custom-resource override;
+        the autoscaler must have a matching Xe node pool configured.<br>
+        Adds an Intel GPU setup and manual verification guide and links it
+        from the GPU documentation.
       </td>
     </tr>
   </tbody>
