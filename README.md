@@ -317,6 +317,30 @@
         <code>deserialize()</code> rather than reimplementing it.
       </td>
     </tr>
+    <tr>
+      <td><b>[Kubernetes] Add Intel GPU discovery and resource selection</b></td>
+      <td><code>5420c46</code></td>
+      <td>
+        <code>sky/provision/kubernetes/utils.py</code><br>
+        <code>sky/clouds/kubernetes.py</code><br>
+        <code>docs/source/reference/kubernetes/intel-gpu.rst</code><br>
+        <code>docs/source/compute/gpus.rst</code>
+      </td>
+      <td>
+        Adds Intel GPU discovery and counting through
+        <code>gpu.intel.com/xe</code> (<code>xe</code> driver only;
+        <code>i915</code> GPUs are not supported). The new
+        <code>IntelGPULabelFormatter</code> reads NFD
+        <code>gpu.intel.com/product</code> labels and normalizes model names
+        (e.g. <code>Arc_Pro_B60</code> → <code>Intel-Arc-Pro-B60</code>);
+        B-series product labels need Intel device plugin NFD rules v0.37.0+.<br>
+        Pods for Intel product labels request <code>gpu.intel.com/xe</code>,
+        alongside the existing AMD/NVIDIA label-key selection, so mixed
+        clusters and autoscaling without an existing GPU node work.<br>
+        Adds an Intel GPU setup and manual verification guide and links it
+        from the GPU documentation.
+      </td>
+    </tr>
   </tbody>
 </table>
 
@@ -396,6 +420,7 @@ git cherry-pick c6f8f23  # Raise per-controller service capacity for k8s
 git cherry-pick 78fe751  # Pin uv pip to runtime venv via --python
 git cherry-pick 69b0a69  # Exclude kubernetes==36.0.0 (in-cluster auth regression)
 git cherry-pick 827ff42  # Accept PEP 585 dict[K,V] type strings in pod_config validator
+git cherry-pick 5420c46  # Intel xe GPU discovery and resource selection
 # Resolve any conflicts if upstream changed the same files
 
 # 4. Push new branch

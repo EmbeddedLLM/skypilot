@@ -172,16 +172,19 @@ MEMORY_SIZE_UNITS = {
     'P': 2**50,
 }
 
-# The resource keys used by Kubernetes to track NVIDIA GPUs and Google TPUs on
+# The resource keys used by Kubernetes to track GPUs and Google TPUs on
 # nodes. These keys are typically used in the node's status.allocatable
 # or status.capacity fields to indicate the available resources on the node.
-SUPPORTED_GPU_RESOURCE_KEYS = {'amd': 'amd.com/gpu', 'nvidia': 'nvidia.com/gpu'}
+SUPPORTED_GPU_RESOURCE_KEYS = {
+    'amd': 'amd.com/gpu',
+    'nvidia': 'nvidia.com/gpu',
+    'intel_xe': 'gpu.intel.com/xe',
+}
 TPU_RESOURCE_KEY = 'google.com/tpu'
 
 NO_ACCELERATOR_HELP_MESSAGE = (
     'If your cluster contains GPUs or TPUs, make sure '
-    f'one of {SUPPORTED_GPU_RESOURCE_KEYS["amd"]}, '
-    f'{SUPPORTED_GPU_RESOURCE_KEYS["nvidia"]} or '
+    f'one of {", ".join(SUPPORTED_GPU_RESOURCE_KEYS.values())} or '
     f'{TPU_RESOURCE_KEY} resource is available '
     'on the nodes and the node labels for identifying GPUs/TPUs '
     '(e.g., skypilot.co/accelerator) are setup correctly. ')
@@ -791,6 +794,43 @@ class AMDGPULabelFormatter(GPULabelFormatter):
         return name.replace(' ', '')
 
 
+class IntelGPULabelFormatter(GPULabelFormatter):
+    """Intel NFD product labels on nodes exposing a single GPU model.
+
+    e.g. gpu.intel.com/product=Arc_Pro_B60 -> Intel-Arc-Pro-B60. Only nodes
+    exposing the gpu.intel.com/xe resource are supported.
+    """
+
+    LABEL_KEY = 'gpu.intel.com/product'
+
+    @classmethod
+    def match_label_key(cls, label_key: str) -> bool:
+        return label_key == cls.LABEL_KEY
+
+    @classmethod
+    def get_label_key(cls, accelerator: Optional[str] = None) -> str:
+        return cls.LABEL_KEY
+
+    @classmethod
+    def get_label_keys(cls) -> List[str]:
+        return [cls.LABEL_KEY]
+
+    @classmethod
+    def get_label_values(cls, accelerator: str) -> List[str]:
+        raise NotImplementedError
+
+    @classmethod
+    def validate_label_value(cls, value: str) -> Tuple[bool, str]:
+        valid = bool(value and value.strip())
+        return valid, (f'Intel GPU label value {value!r} must be non-empty.'
+                       if not valid else '')
+
+    @classmethod
+    def get_accelerator_from_label_value(cls, value: str) -> str:
+        name = value.strip().replace('_', '-').replace(' ', '-')
+        return f'Intel-{name}'
+
+
 def _accelerator_name_matches(requested_acc: str,
                               viable_names: List[str]) -> bool:
     """Check if requested accelerator matches any viable name.
@@ -882,8 +922,8 @@ class NebiusLabelFormatter(GPULabelFormatter):
 # auto-detecting the GPU label type.
 LABEL_FORMATTER_REGISTRY = [
     SkyPilotLabelFormatter, GKELabelFormatter, KarpenterLabelFormatter,
-    GFDLabelFormatter, AMDGPULabelFormatter, CoreWeaveLabelFormatter,
-    NebiusLabelFormatter
+    GFDLabelFormatter, AMDGPULabelFormatter, IntelGPULabelFormatter,
+    CoreWeaveLabelFormatter, NebiusLabelFormatter
 ]
 
 
@@ -1360,10 +1400,8 @@ def detect_accelerator_resource(
         context: Optional[str]) -> Tuple[bool, Set[str]]:
     """Checks if the Kubernetes cluster has GPU/TPU resource.
 
-    Three types of accelerator resources are available which are each checked
-    with amd.com/gpu, nvidia.com/gpu and google.com/tpu. If amd.com/gpu or nvidia.com/gpu resource is
-    missing, that typically means that the Kubernetes cluster does not have
-    GPUs or the amd/nvidia GPU operator and/or device drivers are not installed.
+    Checks all supported GPU resources and Google TPUs. Missing resources
+    typically mean the device plugin or drivers are not installed.
 
     Returns:
         bool: True if the cluster has GPU_RESOURCE_KEY or TPU_RESOURCE_KEY
@@ -2058,15 +2096,14 @@ def get_accelerator_label_key_values(
                     'and re-run '
                     f'`sky ssh up --infra {context_display_name}`. {suffix}')
             else:
+                gpu_resources = ', '.join(SUPPORTED_GPU_RESOURCE_KEYS.values())
                 msg = (
-                    f'Could not detect GPU/TPU resources ({SUPPORTED_GPU_RESOURCE_KEYS["amd"]!r}, '
-                    f'{SUPPORTED_GPU_RESOURCE_KEYS["nvidia"]!r} or '
+                    f'Could not detect GPU/TPU resources ({gpu_resources} or '
                     f'{TPU_RESOURCE_KEY!r}) in Kubernetes cluster. If this cluster'
                     ' contains GPUs, please ensure GPU drivers are installed on '
                     'the node. Check if the GPUs are setup correctly by running '
                     '`kubectl describe nodes` and looking for the '
-                    f'{SUPPORTED_GPU_RESOURCE_KEYS["amd"]!r}, '
-                    f'{SUPPORTED_GPU_RESOURCE_KEYS["nvidia"]!r} or '
+                    f'{gpu_resources} or '
                     f'{TPU_RESOURCE_KEY!r} resource. '
                     'Please refer to the documentation on how to set up GPUs.'
                     f'{suffix}')
@@ -3812,7 +3849,7 @@ def get_node_accelerator_count(context: Optional[str],
     gpu_resource_name = get_gpu_resource_key(context)
     assert not (gpu_resource_name in attribute_dict and
                 TPU_RESOURCE_KEY in attribute_dict)
-    for gpu_resource in ["nvidia.com/gpu", "amd.com/gpu"]:
+    for gpu_resource in SUPPORTED_GPU_RESOURCE_KEYS.values():
         if gpu_resource in attribute_dict:
             return int(attribute_dict[gpu_resource])
     if TPU_RESOURCE_KEY in attribute_dict:
