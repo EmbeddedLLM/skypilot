@@ -12,6 +12,13 @@
   <tr><td><b>Upstream repo</b></td><td><a href="https://github.com/skypilot-org/skypilot">skypilot-org/skypilot</a></td></tr>
 </table>
 
+<h3>📦 Branch Wheels</h3>
+
+Run **Actions → Publish Branch Wheel** with a source branch such as
+`ellm-0.12.0` to publish a wheel to GitHub Releases.
+Add release notes manually on GitHub. See the
+[publishing guide](docs/branch-wheels.md).
+
 <h3>🐳 Image Tags</h3>
 
 <table>
