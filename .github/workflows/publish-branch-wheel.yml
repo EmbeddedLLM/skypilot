@@ -8,6 +8,9 @@ on:
         required: true
         default: ellm-0.12.0
         type: string
+  push:
+    branches:
+      - update-intel-commit-hash
 
 permissions:
   contents: write
