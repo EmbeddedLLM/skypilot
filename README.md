@@ -319,7 +319,7 @@
     </tr>
     <tr>
       <td><b>[Kubernetes] Add Intel GPU discovery and resource selection</b></td>
-      <td><code>5420c46</code></td>
+      <td><code>f6ec5d2</code></td>
       <td>
         <code>sky/provision/kubernetes/utils.py</code><br>
         <code>sky/clouds/kubernetes.py</code><br>
@@ -420,7 +420,7 @@ git cherry-pick c6f8f23  # Raise per-controller service capacity for k8s
 git cherry-pick 78fe751  # Pin uv pip to runtime venv via --python
 git cherry-pick 69b0a69  # Exclude kubernetes==36.0.0 (in-cluster auth regression)
 git cherry-pick 827ff42  # Accept PEP 585 dict[K,V] type strings in pod_config validator
-git cherry-pick 5420c46  # Intel xe GPU discovery and resource selection
+git cherry-pick f6ec5d2  # Intel xe GPU discovery and resource selection
 # Resolve any conflicts if upstream changed the same files
 
 # 4. Push new branch
