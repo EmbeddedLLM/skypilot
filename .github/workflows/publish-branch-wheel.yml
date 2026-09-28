@@ -1,0 +1,93 @@
+name: Publish Branch Wheel
+
+on:
+  push:
+    branches:
+      - ellm-0.12.0
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Pin automatic builds to the commit that triggered the workflow.
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+
+      - name: Reserve wheel version
+        env:
+          SOURCE_BRANCH: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          python - <<'PY'
+          import datetime
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+
+          init = Path('sky/__init__.py')
+          content = init.read_text()
+          base = re.fullmatch(r'ellm-(\d+\.\d+\.\d+)', os.environ['SOURCE_BRANCH'])
+          base = base[1] if base else re.search(r"^__version__ = ['\"](\d+\.\d+\.\d+)", content, re.M)[1]
+          prefix = f'{base}+ellm.{datetime.datetime.now(datetime.timezone.utc):%Y%m%d}'
+          repo = os.environ['GH_REPO']
+          refs = json.loads(subprocess.check_output([
+              'gh', 'api', f'repos/{repo}/git/matching-refs/tags/wheel-{prefix}.'
+          ], text=True))
+          pattern = re.compile(rf'refs/tags/wheel-{re.escape(prefix)}\.(\d+)')
+          counters = []
+          for ref in refs:
+              match = pattern.fullmatch(ref['ref'])
+              if match:
+                  counters.append(int(match[1]))
+          counter = max(counters, default=0) + 1
+          sha = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+
+          # Creating the tag atomically reserves this version across concurrent
+          # builds. Keep the tag on failure so later runs never reuse a version.
+          while True:
+              version = f'{prefix}.{counter}'
+              tag = f'wheel-{version}'
+              result = subprocess.run([
+                  'gh', 'api', '--method', 'POST', f'repos/{repo}/git/refs',
+                  '-f', f'ref=refs/tags/{tag}', '-f', f'sha={sha}'
+              ], capture_output=True, text=True)
+              if result.returncode == 0:
+                  break
+              # Retry only if the tag was claimed; surface other API failures.
+              existing = subprocess.run([
+                  'gh', 'api', f'repos/{repo}/git/ref/tags/{tag}'
+              ], capture_output=True, text=True)
+              if existing.returncode != 0:
+                  raise RuntimeError(f'Could not reserve {tag}: {result.stderr}')
+              counter += 1
+
+          print(f'Reserved wheel version: {version}')
+          init.write_text(re.sub(r'^__version__ = .*$', f"__version__ = '{version}'", content, flags=re.M))
+          with open(os.environ['GITHUB_ENV'], 'a') as env:
+              env.write(f'WHEEL_VERSION={version}\n')
+          PY
+
+      - name: Build wheel
+        run: |
+          python -m pip install build
+          python -m build --wheel
+
+      - name: Publish wheel
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "wheel-$WHEEL_VERSION" dist/*.whl \
+            --verify-tag --title "SkyPilot $WHEEL_VERSION" \
+            --notes '' --prerelease --latest=false
