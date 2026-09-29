@@ -326,7 +326,7 @@ Add release notes manually on GitHub. See the
     </tr>
     <tr>
       <td><b>[Kubernetes] Add Intel GPU discovery and resource selection</b></td>
-      <td><code>5420c46</code></td>
+      <td><code>5420c46</code><br>(plus <code>bb8cbc9</code>, <code>0e986b2</code>, <code>f579438</code>)</td>
       <td>
         <code>sky/provision/kubernetes/utils.py</code><br>
         <code>sky/clouds/kubernetes.py</code><br>
@@ -346,6 +346,36 @@ Add release notes manually on GitHub. See the
         clusters and autoscaling without an existing GPU node work.<br>
         Adds an Intel GPU setup and manual verification guide and links it
         from the GPU documentation.
+      </td>
+    </tr>
+    <tr>
+      <td><b>[CI] Publish branch wheels to GitHub Releases</b></td>
+      <td><code>b43391c</code><br>(plus <code>64919e5</code>, <code>12bd32c</code>)</td>
+      <td>
+        <code>.github/workflows/publish-branch-wheel.yml</code><br>
+        <code>docs/branch-wheels.md</code><br>
+        <code>README.md</code>
+      </td>
+      <td>
+        Adds wheel builds and GitHub Releases publishing. Follow-up
+        <code>64919e5</code> replaces the manual trigger with pushes to
+        <code>ellm-0.12.0</code>, checks out the triggering commit, and reserves
+        <code>wheel-{version}+ellm.YYYYMMDD.N</code> tags with a UTC date and
+        per-day counter so concurrent builds do not reuse versions.
+        Follow-up <code>12bd32c</code> publishes a regular release marked
+        latest instead of a prerelease. Release notes are added manually.
+        Update the workflow's branch filter when moving to a new version branch.
+      </td>
+    </tr>
+    <tr>
+      <td><b>[CLI] Allow Click 8.2.1 and newer 8.x releases</b></td>
+      <td><code>44d09ea</code></td>
+      <td><code>sky/setup_files/dependencies.py</code></td>
+      <td>
+        Replaces <code>click &gt;= 7.0, &lt; 8.2.0</code> with
+        <code>click &gt;= 7.0, != 8.2.0, &lt; 9.0.0</code>, allowing newer
+        Click 8.x releases while retaining the exclusion for the 8.2.0 flag
+        parsing bug and an upper bound before Click 9.
       </td>
     </tr>
   </tbody>
@@ -427,7 +457,10 @@ git cherry-pick c6f8f23  # Raise per-controller service capacity for k8s
 git cherry-pick 78fe751  # Pin uv pip to runtime venv via --python
 git cherry-pick 69b0a69  # Exclude kubernetes==36.0.0 (in-cluster auth regression)
 git cherry-pick 827ff42  # Accept PEP 585 dict[K,V] type strings in pod_config validator
-git cherry-pick 5420c46  # Intel xe GPU discovery and resource selection
+git cherry-pick 5420c46 bb8cbc9 0e986b2 f579438  # Intel xe GPU discovery and follow-up fixes
+git cherry-pick b43391c 64919e5  # Publish wheels on push with unique versions
+git cherry-pick 44d09ea  # Allow Click 8.2.1+ while excluding 8.2.0 and 9.x
+git cherry-pick 12bd32c  # Mark wheel releases as latest (not prereleases)
 # Resolve any conflicts if upstream changed the same files
 
 # 4. Push new branch
