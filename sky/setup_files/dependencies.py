@@ -17,10 +17,9 @@ install_requires = [
     'pip',
     'cachetools',
     # NOTE: ray requires click>=7.0.
-    # click 8.2.0 has a bug in parsing the command line arguments:
+    # Click 8.2.0 has a flag parsing bug fixed in 8.2.1:
     # https://github.com/pallets/click/issues/2894
-    # TODO(aylei): remove this once the bug is fixed in click.
-    'click >= 7.0, < 8.2.0',
+    'click >= 7.0, != 8.2.0, < 9.0.0',
     'colorama',
     'cryptography',
     # Jinja has a bug in older versions because of the lack of pinning
