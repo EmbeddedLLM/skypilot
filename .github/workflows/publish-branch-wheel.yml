@@ -90,4 +90,4 @@ jobs:
         run: |
           gh release create "wheel-$WHEEL_VERSION" dist/*.whl \
             --verify-tag --title "SkyPilot $WHEEL_VERSION" \
-            --notes '' --prerelease --latest=false
+            --notes '' --latest
