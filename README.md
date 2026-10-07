@@ -378,6 +378,30 @@ Add release notes manually on GitHub. See the
         parsing bug and an upper bound before Click 9.
       </td>
     </tr>
+    <tr>
+      <td><b>[Serve] Keep reused replicas routable on count-only updates</b></td>
+      <td><code>7f89638</code><br>(plus <code>6444f96</code>, <code>82fc2fb</code>)</td>
+      <td><code>sky/serve/replica_managers.py</code></td>
+      <td>
+        A <code>sky serve update</code> that changes only the
+        <code>service:</code> section (e.g. <code>replicas: 1 → 2</code>)
+        reuses running replicas by relabelling them to the new version, but
+        <code>active_versions</code> was only refreshed by the next prober
+        pass. Until then the load balancer filtered out every reused replica
+        and returned <code>503 No ready replicas</code> for up to one sync
+        interval (20 s). Regression from upstream #3249, which replaced the
+        per-sync version choice used when reuse (#3214) was written.
+        Fix: recompute <code>active_versions</code> right after the relabel,
+        using the prober's own function.<br>
+        Follow-up <code>6444f96</code>: the prober wrote back its stale
+        <code>ReplicaInfo</code> snapshot after probing, reverting a relabel
+        that landed mid-probe (<code>update_version</code> does not hold the
+        replica lock), so the autoscaler replaced the healthy replica. The
+        prober now re-reads the stored version before writing back.
+        <code>82fc2fb</code> removes the unit test added in
+        <code>6444f96</code>.
+      </td>
+    </tr>
   </tbody>
 </table>
 
@@ -461,6 +485,8 @@ git cherry-pick 5420c46 bb8cbc9 0e986b2 f579438  # Intel xe GPU discovery and fo
 git cherry-pick b43391c 64919e5  # Publish wheels on push with unique versions
 git cherry-pick 44d09ea  # Allow Click 8.2.1+ while excluding 8.2.0 and 9.x
 git cherry-pick 12bd32c  # Mark wheel releases as latest (not prereleases)
+# Keep reused replicas routable on count-only serve updates (3 commits, in order):
+git cherry-pick 7f89638 6444f96 82fc2fb
 # Resolve any conflicts if upstream changed the same files
 
 # 4. Push new branch
