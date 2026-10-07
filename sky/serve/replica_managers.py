@@ -1422,6 +1422,13 @@ class SkyPilotReplicaManager(ReplicaManager):
                                         f'seconds ({current_delay_seconds}s '
                                         f'/ {initial_delay_seconds}s). '
                                         'Skipping.')
+                # `update_version` relabels replicas without holding the lock,
+                # possibly while this probe was in flight. Keep its version
+                # instead of writing back the stale one from our snapshot.
+                latest_info = serve_state.get_replica_info_from_id(
+                    self._service_name, info.replica_id)
+                if latest_info is not None:
+                    info.version = latest_info.version
                 serve_state.add_or_update_replica(self._service_name,
                                                   info.replica_id, info)
                 if should_teardown:
