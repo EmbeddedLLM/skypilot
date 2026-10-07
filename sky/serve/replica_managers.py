@@ -1422,6 +1422,13 @@ class SkyPilotReplicaManager(ReplicaManager):
                                         f'seconds ({current_delay_seconds}s '
                                         f'/ {initial_delay_seconds}s). '
                                         'Skipping.')
+                # `update_version` relabels replicas without holding the lock,
+                # possibly while this probe was in flight. Keep its version
+                # instead of writing back the stale one from our snapshot.
+                latest_info = serve_state.get_replica_info_from_id(
+                    self._service_name, info.replica_id)
+                if latest_info is not None:
+                    info.version = latest_info.version
                 serve_state.add_or_update_replica(self._service_name,
                                                   info.replica_id, info)
                 if should_teardown:
@@ -1539,6 +1546,13 @@ class SkyPilotReplicaManager(ReplicaManager):
                     logger.info('Replica config changed (rest), skipping. '
                                 f'old: {old_config}, '
                                 f'new: {new_config}')
+        # A reused replica now carries the new version, but `active_versions`
+        # still lists only the old ones until the next prober cycle, so the
+        # load balancer would drop every reused replica in between. Refresh it
+        # now so the reuse never takes a ready replica out of rotation.
+        serve_utils.set_service_status_and_active_versions_from_replica(
+            self._service_name,
+            serve_state.get_replica_infos(self._service_name), update_mode)
 
     def _get_version_spec(self, version: int) -> 'service_spec.SkyServiceSpec':
         spec = serve_state.get_spec(self._service_name, version)
