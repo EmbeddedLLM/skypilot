@@ -950,7 +950,7 @@ available_node_types:
                 # images that ship a Python at non-standard prefixes (e.g. ROCm
                 # images with /opt/python in PATH), installing into the wrong
                 # interpreter or failing to find a wheel for ray's Python ABI.
-                VIRTUAL_ENV=~/skypilot-runtime UV_LINK_MODE=copy UV_SYSTEM_PYTHON=false {{sky_unset_pythonpath_and_set_cwd}} ~/.local/bin/uv pip install --python ~/skypilot-runtime/bin/python skypilot[kubernetes,remote]
+                VIRTUAL_ENV=~/skypilot-runtime UV_LINK_MODE=copy UV_SYSTEM_PYTHON=false {{sky_unset_pythonpath_and_set_cwd}} ~/.local/bin/uv pip install --python ~/skypilot-runtime/bin/python 'skypilot[kubernetes,remote]==0.14.2'
                 # Wait for `patch` package to be installed before applying ray patches
                 until dpkg -l | grep -q "^ii  patch "; do
                   sleep 0.1
