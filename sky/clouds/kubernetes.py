@@ -1066,7 +1066,8 @@ class Kubernetes(clouds.Cloud):
                 k8s_resource_key = kubernetes_utils.NEURON_RESOURCE_KEY
             else:
                 # Derive resource key from the matched label key.
-                # AMD device plugin labels start with 'amd.com/'; all other
+                # AMD device plugin labels start with 'amd.com/'; Intel NFD
+                # product labels map to the Xe resource; all other
                 # recognized GPU label formatters (GFD, SkyPilot, GKE,
                 # Karpenter, CoreWeave, Nebius) are for NVIDIA GPUs.
                 # We must NOT fall back to get_gpu_resource_key(context) here:
@@ -1077,6 +1078,10 @@ class Kubernetes(clouds.Cloud):
                         k8s_acc_label_key.startswith('amd.com/')):
                     k8s_resource_key = (
                         kubernetes_utils.SUPPORTED_GPU_RESOURCE_KEYS['amd'])
+                elif (k8s_acc_label_key ==
+                      kubernetes_utils.IntelGPULabelFormatter.LABEL_KEY):
+                    k8s_resource_key = (kubernetes_utils.
+                                        SUPPORTED_GPU_RESOURCE_KEYS['intel_xe'])
                 elif k8s_acc_label_key is not None:
                     k8s_resource_key = (
                         kubernetes_utils.SUPPORTED_GPU_RESOURCE_KEYS['nvidia'])
