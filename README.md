@@ -1,3 +1,367 @@
+<h2>🍴 EmbeddedLLM Fork</h2>
+
+<p>
+  This is a downstream fork of <a href="https://github.com/skypilot-org/skypilot">skypilot-org/skypilot</a> maintained by <a href="https://github.com/EmbeddedLLM">EmbeddedLLM</a>.
+  It tracks upstream releases and stacks a small set of custom patches on top.
+</p>
+
+<table>
+  <tr><td><b>Upstream version</b></td><td><code>0.14.3</code></td></tr>
+  <tr><td><b>Branch</b></td><td><code>ellm-0.14.3</code></td></tr>
+  <tr><td><b>Image</b></td><td><code>ghcr.io/embeddedllm/skypilot:v0.14.3</code></td></tr>
+  <tr><td><b>Upstream repo</b></td><td><a href="https://github.com/skypilot-org/skypilot">skypilot-org/skypilot</a></td></tr>
+  <tr><td><b>Previous branch</b></td><td><code>ellm-0.12.0</code> (kept as a rollback point)</td></tr>
+</table>
+
+<h3>📦 Branch Wheels</h3>
+
+Every push to `ellm-0.14.3` runs **Actions → Publish Branch Wheel**, which
+builds a wheel for the pushed commit and publishes it as a GitHub release
+marked **Latest**. Add release notes manually on GitHub. See the
+[publishing guide](docs/branch-wheels.md).
+
+<h3>🐳 Image Tags</h3>
+
+<table>
+  <thead>
+    <tr><th>Tag</th><th>Meaning</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>v0.14.3</code></td><td>Stable, production-ready build based on upstream v0.14.3</td></tr>
+    <tr><td><code>v0.14.3-dev</code></td><td>Development build off <code>ellm-0.14.3</code> branch, not yet stable</td></tr>
+  </tbody>
+</table>
+
+<h3>🔧 Custom Patches</h3>
+
+The patches below were ported from `ellm-0.12.0` onto upstream `v0.14.3`.
+Multi-commit topics were squashed into one commit each; every commit message
+lists the original `ellm-0.12.0` hashes and how the port differs from them.
+
+<table>
+  <thead>
+    <tr>
+      <th>Patch</th>
+      <th>Commit</th>
+      <th>Ported from</th>
+      <th>Files Changed</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><b>[Kubernetes] Fix podip endpoint in HA mode</b></td>
+      <td><code>47fbd4f</code><br>(format fix <code>04d12b1</code>)</td>
+      <td><code>f3b4561</code></td>
+      <td><code>sky/provision/kubernetes/network.py</code></td>
+      <td>
+        In HA mode the serve controller runs as a Deployment, so its pod has a
+        random name suffix and the expected <code>{cluster}-head</code> pod never
+        exists; the endpoint came back as <code>http://None</code>.
+        <code>_query_ports_for_podip</code> now finds the head pod by label
+        selector, which works in both HA and non-HA modes.
+      </td>
+    </tr>
+    <tr>
+      <td><b>[CLI] Allow Click 8.2.1 and newer 8.x releases</b></td>
+      <td><code>5408b11</code></td>
+      <td><code>44d09ea</code></td>
+      <td><code>sky/setup_files/dependencies.py</code></td>
+      <td>
+        Replaces <code>click &gt;= 7.0, &lt; 8.2.0</code> with
+        <code>click &gt;= 7.0, != 8.2.0, &lt; 9.0.0</code>, keeping the exclusion
+        for the 8.2.0 flag parsing bug.<br>
+        <em>Note: upstream 0.14.3 pins <code>click&lt;8.3.0</code> on the cluster
+        side because Click 8.3 breaks the Ray CLI; this client-side range is
+        wider than that.</em>
+      </td>
+    </tr>
+    <tr>
+      <td><b>[Serve] Raise per-controller service capacity for k8s workloads</b></td>
+      <td><code>cffc582</code></td>
+      <td><code>c6f8f23</code></td>
+      <td>
+        <code>sky/utils/controller_utils.py</code><br>
+        <code>tests/unit_tests/test_sky/server/test_config.py</code>
+      </td>
+      <td>
+        Upstream reserves about 2.1 GB per service on the serve controller, which
+        caps an 8 GB controller at 2 services. Lowers
+        <code>LAUNCHES_PER_SERVICE</code> from 4 to 2 and sizes the controller's
+        local API server workers at 0.25 GB
+        (<code>SERVE_LOCAL_API_LONG_WORKER_MEM_GB</code>) instead of 0.4 GB,
+        without touching the central API server's worker sizing. The lower worker
+        memory also applies to pools, which raises pool capacity as well.
+      </td>
+    </tr>
+    <tr>
+      <td><b>Pin uv pip to runtime venv's Python via <code>--python</code> flag</b></td>
+      <td><code>bd1fec4</code></td>
+      <td><code>78fe751</code></td>
+      <td>
+        <code>sky/skylet/constants.py</code><br>
+        <code>sky/templates/kubernetes-ray.yml.j2</code><br>
+        <code>sky/adaptors/oci.py</code><br>
+        <code>tests/unit_tests/test_sky/test_ray_version_per_cluster.py</code>
+      </td>
+      <td>
+        uv can ignore <code>VIRTUAL_ENV</code> on images that ship a Python at a
+        non-standard prefix (e.g. ROCm images with <code>/opt/python</code> in
+        <code>PATH</code>), installing into the wrong interpreter or failing to
+        find a Ray wheel. Every <code>uv pip install/uninstall/list</code> and
+        <code>uv run</code> that targets the SkyPilot runtime venv now passes
+        <code>--python &lt;venv&gt;/bin/python</code>.
+      </td>
+    </tr>
+    <tr>
+      <td><b>[Kubernetes] Support mixed NVIDIA + AMD GPU clusters</b></td>
+      <td><code>9e4b044</code></td>
+      <td>
+        <code>493fb1f</code>, <code>9cd2668</code>, <code>e9581a9</code>,
+        <code>f65b71f</code>, <code>57c8ba2</code>, <code>37a0b54</code>,
+        <code>b35db4a</code>, <code>d05ad3c</code>
+      </td>
+      <td>
+        <code>sky/provision/kubernetes/utils.py</code><br>
+        <code>sky/provision/kubernetes/instance.py</code><br>
+        <code>sky/catalog/kubernetes_catalog.py</code><br>
+        <code>sky/clouds/kubernetes.py</code><br>
+        <code>sky/utils/gpu_names.py</code><br>
+        <code>sky/client/cli/command.py</code><br>
+        <code>scripts/test_amd_labels_fedora.py</code><br>
+        <code>scripts/validate_gpu_resource_key.py</code>
+      </td>
+      <td>
+        Upstream picks one GPU resource key and one label formatter per cluster.
+        This patch makes both per node and per pod, so NVIDIA and AMD nodes work
+        in the same cluster with no extra configuration:
+        <ul>
+          <li><b>AMD detection</b>: <code>AMDGPULabelFormatter</code> reads the
+            <a href="https://github.com/ROCm/k8s-device-plugin">AMD device plugin</a>
+            label <code>amd.com/gpu.product-name = &lt;NAME&gt;</code>, so
+            <code>sky gpus label</code> is not needed on AMD nodes. Adds 33 AMD
+            canonical GPU names.</li>
+          <li><b>Per-node detection</b>: <code>sky gpus list</code>, per-node
+            status, label lookup and CPU-only node avoidance try every registered
+            formatter on each node.</li>
+          <li><b>Resource key</b>: derived from the matched label key
+            (<code>amd.com/*</code> → <code>amd.com/gpu</code>, any other GPU
+            label → <code>nvidia.com/gpu</code>) instead of the cluster default.</li>
+          <li><b>Pod handling</b>: GPU tolerations, scheduling error messages and
+            status GPU counts read the key from the pod's own limits or
+            requests.</li>
+          <li><b>Node affinity</b>: label values are coerced to strings.</li>
+        </ul>
+        Each node must expose exactly one GPU type; the AMD device plugin's
+        suffix label format (multi-GPU-type nodes) is not supported.<br>
+        <em>Limitations: <code>CUSTOM_GPU_RESOURCE_KEY</code> is ignored in pod
+        GPU detection, unlabeled-node detection and status GPU counts.</em>
+      </td>
+    </tr>
+    <tr>
+      <td><b>[Kubernetes] Add Intel GPU discovery and resource selection</b></td>
+      <td><code>183183b</code></td>
+      <td>
+        <code>5420c46</code>, <code>bb8cbc9</code>, <code>0e986b2</code>,
+        <code>f579438</code>
+      </td>
+      <td>
+        <code>sky/provision/kubernetes/utils.py</code><br>
+        <code>sky/clouds/kubernetes.py</code><br>
+        <code>docs/source/reference/kubernetes/intel-gpu.rst</code><br>
+        <code>docs/source/compute/gpus.rst</code>
+      </td>
+      <td>
+        Adds <code>IntelGPULabelFormatter</code> for the NFD product label
+        <code>gpu.intel.com/product</code> (e.g. <code>Arc_Pro_B60</code> →
+        <code>Intel-Arc-Pro-B60</code>) and the <code>gpu.intel.com/xe</code>
+        resource key. Pods matched by the Intel label request that key. Only the
+        xe driver is supported. See the Intel GPU guide under
+        <code>docs/source/reference/kubernetes/</code>.
+      </td>
+    </tr>
+    <tr>
+      <td><b>[Kubernetes] Accept PEP 585 <code>dict[K, V]</code> type strings in pod_config validator</b></td>
+      <td><code>3ef5c8a</code></td>
+      <td><code>827ff42</code></td>
+      <td><code>sky/provision/kubernetes/utils.py</code></td>
+      <td>
+        <code>kubernetes</code> client 36+ declares map fields as
+        <code>dict[str, str]</code> instead of <code>dict(str, str)</code>, which
+        made the pod_config validator fail with <code>ModuleNotFoundError</code>.
+        The validator accepts both forms. Upstream 0.14.3 pins
+        <code>kubernetes&lt;36</code>, so this is a safety net for environments
+        that have a newer client installed anyway.
+      </td>
+    </tr>
+    <tr>
+      <td><b>[Kubernetes] Sync files with tar over kubectl exec; fix exec stream hangs</b></td>
+      <td><code>0e5ec26</code></td>
+      <td>
+        <code>0e764fe</code>, <code>d5731f4</code>, <code>e3237a7</code>,
+        <code>502df1c</code>, <code>4f1c887</code>, <code>175e866</code>
+      </td>
+      <td>
+        <code>sky/utils/command_runner.py</code><br>
+        <code>sky/utils/kubernetes/rsync_helper.sh</code><br>
+        <code>sky/templates/kubernetes-ray.yml.j2</code><br>
+        <code>tests/unit_tests/test_sky/utils/test_command_runner.py</code>
+      </td>
+      <td>
+        On Ubuntu 26 / kernel 6.8+ hosts, rsync 3.4.x over
+        <code>kubectl exec</code> deadlocks at session teardown and leaves the
+        SkyServe controller stuck at <em>Preparing SkyPilot runtime</em>.
+        <ul>
+          <li><code>KubernetesCommandRunner.rsync</code> streams
+            <code>tar -c | kubectl exec -i -- tar -x</code> instead (or the
+            reverse for downloads). Ignore files go through
+            <code>--exclude-ignore</code>; a file source is renamed to the target
+            path with <code>tar --transform</code>. The upstream
+            <code>timeout</code> argument is honoured.</li>
+          <li>SPDY transport is forced for kubectl exec
+            (<code>KUBECTL_REMOTE_COMMAND_WEBSOCKETS=false</code>).</li>
+          <li><code>rsync_helper.sh</code> waits for rsync and runs the transfer
+            in two separate exec calls.</li>
+          <li><code>setup_commands</code> uses <code>tail -f --pid=$$</code> so an
+            orphaned tail cannot hold the exec stream open after setup
+            finishes.</li>
+        </ul>
+        <em>Notes: file syncs log <code>[TAR-RSYNC-DEBUG]</code> lines at info
+        level. The tar path may not honour <code>!</code> negation patterns in
+        <code>.skyignore</code>, which upstream supports in its rsync path.</em>
+      </td>
+    </tr>
+    <tr>
+      <td><b>[Serve] Keep reused replicas routable on count-only updates</b></td>
+      <td><code>c322f1b</code></td>
+      <td><code>7f89638</code>, <code>6444f96</code></td>
+      <td><code>sky/serve/replica_managers.py</code></td>
+      <td>
+        A <code>sky serve update</code> that changes only the
+        <code>service:</code> section (e.g. <code>replicas: 1 → 2</code>) reuses
+        running replicas by relabelling them to the new version, but
+        <code>active_versions</code> was only refreshed by the next prober pass,
+        so the load balancer returned <code>503 No ready replicas</code> for up
+        to one sync interval. <code>update_version</code> now refreshes
+        <code>active_versions</code> right after the relabel. The prober also
+        re-reads the stored version before writing its snapshot back, so a
+        relabel that lands mid-probe is not reverted.
+      </td>
+    </tr>
+    <tr>
+      <td><b>[CI] Publish branch wheels to GitHub Releases</b></td>
+      <td><code>d24209c</code></td>
+      <td>
+        <code>b43391c</code>, <code>64919e5</code>, <code>12bd32c</code>,
+        <code>6ef650c</code>
+      </td>
+      <td>
+        <code>.github/workflows/publish-branch-wheel.yml</code><br>
+        <code>docs/branch-wheels.md</code>
+      </td>
+      <td>
+        Each push to <code>ellm-0.14.3</code> reserves a unique
+        <code>wheel-0.14.3+ellm.YYYYMMDD.N</code> tag, builds the wheel and
+        publishes it as a regular release marked Latest. The wheel does not
+        include the dashboard.
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+**Not carried over from `ellm-0.12.0`**
+
+| `ellm-0.12.0` commit | Why it is not on this branch |
+|---|---|
+| `69b0a69`, `d9be189` (`kubernetes` client bounds) | Upstream 0.14.3 already pins `kubernetes>=20.0.0,!=32.0.0,<36.0.0`. |
+| `62d4dc6` (pin temporary bootstrap SkyPilot to 0.14.2) | The pin kept PyPI 0.14.3, whose Ray patches target Ray 2.56.1, away from the old branch's Ray 2.9.3. This branch is 0.14.3 and uses Ray 2.56.1, so the bootstrap install is left unpinned as in upstream. |
+| `ed93406` (keep npm bundled with Node 20) | Upstream 0.14.3 no longer runs `npm install -g npm@latest` in the Dockerfile. |
+| `a98a541` (remove FastAPI `prefix` argument) | Upstream 0.14.3 already creates the app without it. |
+| `32e4e61` (forensic `set -x` trace in `setup_commands`) | Debug-only tracing; the `tail --pid` fix it helped find is ported. |
+| `82fc2fb` (removes `test_serve_replica_versions.py`) | The test was added and removed on `ellm-0.12.0`; neither commit is needed. |
+| `acf0dbc`, `4f1df76` (conda/venv self-heal and its revert) | Net zero. |
+
+<h3>🛠️ Development Workflow</h3>
+
+Never commit directly to `ellm-{version}`. Create a feature branch off it, then open a PR back into it.
+
+```bash
+# 1. Branch off the active version branch
+git checkout ellm-0.14.3
+git checkout -b feat/my-feature
+
+# 2. Make changes, commit
+git add <files>
+git commit -m "[Area] Description"
+git push origin feat/my-feature
+
+# 3. Open a PR → target ellm-0.14.3 (not master)
+gh pr create --base ellm-0.14.3 --title "..." --body "..."
+```
+
+Build and push a dev image to test before merging:
+```bash
+docker buildx build --push --platform linux/amd64 \
+  -t ghcr.io/embeddedllm/skypilot:v0.14.3-dev \
+  -f Dockerfile .
+```
+
+Once the PR is merged and validated, promote to stable:
+```bash
+docker tag ghcr.io/embeddedllm/skypilot:v0.14.3-dev ghcr.io/embeddedllm/skypilot:v0.14.3
+docker push ghcr.io/embeddedllm/skypilot:v0.14.3
+```
+
+**Deploying with Helm**
+
+The Helm chart is pinned to the same upstream version. Always specify `--version` explicitly:
+```bash
+helm upgrade --install $RELEASE_NAME skypilot/skypilot \
+  --version 0.14.3 \
+  --namespace $NAMESPACE \
+  --create-namespace \
+  --set apiService.image=ghcr.io/embeddedllm/skypilot:v0.14.3 \
+  --set ingress.authCredentials=$AUTH_STRING
+```
+
+> When moving to a new upstream version (e.g. `v0.15.0`), update **both** `--version` and `--set apiService.image` together. The Helm chart version must always match the image version.
+
+<h3>⬆️ Updating to a New Upstream Version</h3>
+
+Each upstream version gets its own branch (`ellm-0.12.0`, `ellm-0.14.3`, ...). Old branches are kept as rollback points.
+
+```bash
+# 1. Fetch the upstream release tag (one-time: add the remote)
+git remote add upstream https://github.com/skypilot-org/skypilot
+git fetch upstream refs/tags/v{new_version}:refs/tags/v{new_version}
+
+# 2. Create the new branch from the release tag
+git checkout -b ellm-{new_version} v{new_version}
+
+# 3. Cherry-pick the custom patches, in order (hashes from the table above)
+git cherry-pick 47fbd4f  # Fix podip endpoint in HA mode
+git cherry-pick 04d12b1  # Format the HA pod IP lookup
+git cherry-pick 5408b11  # Allow Click 8.2.1+ while excluding 8.2.0 and 9.x
+git cherry-pick cffc582  # Raise per-controller service capacity for k8s
+git cherry-pick bd1fec4  # Pin uv pip to runtime venv via --python
+git cherry-pick 9e4b044  # Mixed NVIDIA + AMD GPU clusters
+git cherry-pick 183183b  # Intel GPU discovery (depends on 9e4b044)
+git cherry-pick 3ef5c8a  # Accept PEP 585 dict[K, V] in pod_config validator
+git cherry-pick 0e5ec26  # tar over kubectl exec; exec stream hang fixes
+git cherry-pick c322f1b  # Keep reused serve replicas routable
+git cherry-pick d24209c  # Publish branch wheels
+# Resolve any conflicts if upstream changed the same files, and check first
+# whether upstream has absorbed a patch (see "Not carried over" above).
+
+# 4. Push new branch
+git push origin ellm-{new_version}
+```
+
+> After creating the new branch, update this README (**Upstream version**, **Branch**, **Image**, and the commit hashes in the patch table), the branch filter in `.github/workflows/publish-branch-wheel.yml` and the branch name in `docs/branch-wheels.md`. Build and push the new image as `ghcr.io/embeddedllm/skypilot:v{new_version}`.
+
+---
+
+
 <p align="center">
   <a href="https://skypilot.ai/#gh-light-mode-only">
     <img alt="SkyPilot" src="https://raw.githubusercontent.com/skypilot-org/skypilot/master/docs/source/images/skypilot-wide-light-1k.png" width=55%>
