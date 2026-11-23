@@ -711,6 +711,17 @@ class GPULabelFormatter:
         raise NotImplementedError
 
     @classmethod
+    def get_accelerator_from_label(cls, label_key: str, value: str) -> str:
+        """Given a label key and value, returns the GPU type.
+
+        Default implementation delegates to get_accelerator_from_label_value.
+        Override only if the GPU name is encoded somewhere other than the
+        value.
+        """
+        del label_key  # Unused by the default implementation.
+        return cls.get_accelerator_from_label_value(value)
+
+    @classmethod
     def validate_label_value(cls, value: str) -> Tuple[bool, str]:
         """Validates if the specified label value is correct.
 
@@ -1013,6 +1024,67 @@ class GFDLabelFormatter(GPULabelFormatter):
                                                  '').replace('RTX-', 'RTX')
 
 
+class AMDGPULabelFormatter(GPULabelFormatter):
+    """Label formatter for AMD GPU nodes labeled by AMD device plugin.
+
+    Only the direct (single-GPU-type-per-node) label format is supported:
+
+        amd.com/gpu.product-name = "AMD_Radeon_RX_7900_XTX"
+
+    The suffix format (amd.com/gpu.product-name.<NAME> = "1") used on nodes
+    with multiple distinct GPU types (e.g. iGPU + dGPU) is intentionally NOT
+    supported — SkyPilot requires a node to expose exactly one GPU type.
+    iGPU-only nodes are valid and treated like any other GPU node.
+    """
+
+    LABEL_KEY = 'amd.com/gpu.product-name'
+
+    @classmethod
+    def match_label_key(cls, label_key: str) -> bool:
+        return label_key == cls.LABEL_KEY
+
+    @classmethod
+    def get_label_key(cls, accelerator: Optional[str] = None) -> str:
+        return cls.LABEL_KEY
+
+    @classmethod
+    def get_label_keys(cls) -> List[str]:
+        return [cls.LABEL_KEY]
+
+    @classmethod
+    def get_label_values(cls, accelerator: str) -> List[str]:
+        raise NotImplementedError
+
+    @classmethod
+    def validate_label_value(cls, value: str) -> Tuple[bool, str]:
+        valid = bool(value and value.strip())
+        return valid, (f'AMD GPU label value {value!r} must be non-empty.'
+                       if not valid else '')
+
+    @classmethod
+    def get_accelerator_from_label_value(cls, value: str) -> str:
+        return cls._normalize(value)
+
+    @classmethod
+    def _normalize(cls, raw: str) -> str:
+        """Normalize an AMD sysfs product name to a canonical GPU name.
+
+        Input uses underscores (sysfs format), e.g. "AMD_Radeon_RX_7900_XTX".
+        Output is the canonical name, e.g. "RX7900XTX".
+        """
+        name = raw.lower().replace('_', ' ')
+        # Strip spaces for canonical substring matching — canonical names use
+        # no separators (e.g. "RX7900XTX") and sysfs uses underscores/spaces.
+        name_nospace = name.replace(' ', '')
+        for canonical_name in gpu_names.CANONICAL_GPU_NAMES:
+            if canonical_name.lower() in name_nospace:
+                return canonical_name
+        # Fallback: strip vendor/family prefixes and join without separators.
+        name = (name.replace('amd ', '').replace('instinct ',
+                                                 '').replace('radeon ', ''))
+        return name.replace(' ', '')
+
+
 # Lowercase names of one accelerator that the prefix match in
 # _accelerator_name_matches cannot pair, mapped to a shared name. RTX PRO 6000
 # is 'RTXPRO6000' in the GCP catalog, while GKE labels it
@@ -1174,7 +1246,8 @@ class NebiusLabelFormatter(GPULabelFormatter):
 # auto-detecting the GPU label type.
 LABEL_FORMATTER_REGISTRY = [
     SkyPilotLabelFormatter, GKELabelFormatter, KarpenterLabelFormatter,
-    GFDLabelFormatter, CoreWeaveLabelFormatter, NebiusLabelFormatter
+    GFDLabelFormatter, AMDGPULabelFormatter, CoreWeaveLabelFormatter,
+    NebiusLabelFormatter
 ]
 
 
@@ -3351,7 +3424,10 @@ def get_node_affinity(
                 'matchExpressions': [{
                     'key': acc_label_key,
                     'operator': 'In',
-                    'values': list(acc_label_values),
+                    # Label values must be strings: a numeric-looking value
+                    # (e.g. "1") can be deserialized as an int and would be
+                    # rejected by the API server in matchExpressions.values.
+                    'values': [str(v) for v in acc_label_values],
                 }],
             }],
         }
@@ -3490,10 +3566,19 @@ def get_accelerator_label_keys(context: Optional[str],) -> List[str]:
     """Returns the label keys that should be avoided for scheduling
     CPU-only tasks.
     """
-    label_formatter, _ = detect_gpu_label_formatter(context)
-    if label_formatter is None:
-        return []
-    return label_formatter.get_label_keys()
+    nodes = get_kubernetes_nodes(context=context)
+    keys: List[str] = []
+    seen: set = set()
+    for node in nodes:
+        for lk in (node.metadata.labels or {}):
+            if lk in seen:
+                continue
+            for fmt in LABEL_FORMATTER_REGISTRY:
+                if fmt.match_label_key(lk):
+                    keys.append(lk)
+                    seen.add(lk)
+                    break
+    return keys
 
 
 def get_accelerator_label_key_values(
@@ -3624,42 +3709,51 @@ def get_accelerator_label_key_values(
                 if is_multi_host_tpu(node_metadata_labels):
                     continue
                 for label, value in label_list:
-                    if label_formatter.match_label_key(label):
-                        # Match either canonicalized name or raw name.
-                        # Use _accelerator_name_matches for backward compatibility
-                        # with GPU name changes (e.g., H200-SXM-80GB -> H200).
-                        accelerator = (label_formatter.
-                                       get_accelerator_from_label_value(value))
-                        viable = [value.lower(), accelerator.lower()]
-                        if not _accelerator_name_matches(acc_type, viable):
-                            continue
-                        if is_tpu_on_gke(acc_type):
-                            assert isinstance(label_formatter,
-                                              GKELabelFormatter)
-                            if node_metadata_labels.get(
-                                    label_formatter.TPU_LABEL_KEY) == acc_type:
-                                topology_label_key = (
-                                    label_formatter.get_tpu_topology_label_key(
-                                    ))
-                                # Instead of using get_tpu_topology_label_value,
-                                # we use the node's label value to determine the
-                                # topology. This is to make sure the node's
-                                # available topology matches our request.
-                                topology_value = node_metadata_labels.get(
-                                    topology_label_key)
-                                assert topology_value is not None
-                                tpu_topology_chip_count = reduce_tpu_topology(
-                                    topology_value)
-                                # For single-host TPUs, there aren't multiple
-                                # different topologies that maps to identical
-                                # number of TPU chips.
-                                if tpu_topology_chip_count == acc_count:
-                                    return (label, [value], topology_label_key,
-                                            topology_value)
-                                else:
-                                    continue
-                        else:
-                            return label, [value], None, None
+                    # Try each registered formatter — supports mixed clusters
+                    # where some nodes use GFD (NVIDIA) and others use AMD
+                    # device plugin labels.
+                    matched_fmt = None
+                    for fmt in LABEL_FORMATTER_REGISTRY:
+                        if fmt.match_label_key(label):
+                            matched_fmt = fmt
+                            break
+                    if matched_fmt is None:
+                        continue
+                    # Match either canonicalized name or raw name.
+                    # Use _accelerator_name_matches for backward compatibility
+                    # with GPU name changes (e.g., H200-SXM-80GB -> H200).
+                    accelerator = matched_fmt.get_accelerator_from_label(
+                        label, value)
+                    viable = [value.lower(), accelerator.lower()]
+                    if not _accelerator_name_matches(acc_type, viable):
+                        continue
+                    if is_tpu_on_gke(acc_type):
+                        # matched_fmt is a formatter class (registry entry),
+                        # not an instance.
+                        assert issubclass(matched_fmt, GKELabelFormatter)
+                        if node_metadata_labels.get(
+                                GKELabelFormatter.TPU_LABEL_KEY) == acc_type:
+                            topology_label_key = (
+                                matched_fmt.get_tpu_topology_label_key())
+                            # Instead of using get_tpu_topology_label_value,
+                            # we use the node's label value to determine the
+                            # topology. This is to make sure the node's
+                            # available topology matches our request.
+                            topology_value = node_metadata_labels.get(
+                                topology_label_key)
+                            assert topology_value is not None
+                            tpu_topology_chip_count = reduce_tpu_topology(
+                                topology_value)
+                            # For single-host TPUs, there aren't multiple
+                            # different topologies that maps to identical
+                            # number of TPU chips.
+                            if tpu_topology_chip_count == acc_count:
+                                return (label, [str(value)], topology_label_key,
+                                        topology_value)
+                            else:
+                                continue
+                    else:
+                        return label, [str(value)], None, None
 
             # If no node is found with the requested acc_type, raise error
             with ux_utils.print_exception_no_traceback():
@@ -5305,24 +5399,17 @@ def get_unlabeled_accelerator_nodes(context: Optional[str] = None) -> List[Any]:
         List[Any]: List of unlabeled nodes with accelerators.
     """
     nodes = get_kubernetes_nodes(context=context)
-    nodes_with_accelerator = []
-    for node in nodes:
-        if get_gpu_resource_key(context) in node.status.capacity:
-            nodes_with_accelerator.append(node)
-
-    label_formatter, _ = detect_gpu_label_formatter(context)
-    if not label_formatter:
-        return nodes_with_accelerator
-    else:
-        label_keys = label_formatter.get_label_keys()
-
     unlabeled_nodes = []
-    for node in nodes_with_accelerator:
-        labeled = False
-        for label_key in label_keys:
-            if label_key in node.metadata.labels:
-                labeled = True
-                break
+    for node in nodes:
+        node_capacity = node.status.capacity or {}
+        if not any(key in node_capacity
+                   for key in SUPPORTED_GPU_RESOURCE_KEYS.values()):
+            continue
+        node_label_keys = set(node.metadata.labels or {})
+        labeled = any(
+            fmt.match_label_key(lk)
+            for lk in node_label_keys
+            for fmt in LABEL_FORMATTER_REGISTRY)
         if not labeled:
             unlabeled_nodes.append(node)
 
@@ -5450,12 +5537,6 @@ def _get_kubernetes_node_info(
     nodes = get_kubernetes_nodes(context=context)
     configured_tolerations = get_configured_tolerations(context)
 
-    lf, _ = detect_gpu_label_formatter(context)
-    if not lf:
-        label_keys = []
-    else:
-        label_keys = lf.get_label_keys()
-
     # Check if all nodes have no accelerators to avoid fetching pods.
     # Capacity is checked as well as allocatable so a node whose devices are
     # all temporarily withdrawn by the device plugin still counts as an
@@ -5502,13 +5583,18 @@ def _get_kubernetes_node_info(
 
     for node in nodes:
         accelerator_name = None
-        # Determine the accelerator name from the node labels and pick the
-        # first one found. We assume that the node has only one accelerator type
-        # (e.g., either GPU or TPU).
-        for label_key in label_keys:
-            if lf is not None and label_key in node.metadata.labels:
-                accelerator_name = lf.get_accelerator_from_label_value(
-                    node.metadata.labels.get(label_key))
+        # Determine the accelerator name by checking each node label against
+        # all registered formatters. This supports mixed clusters where some
+        # nodes use GFD labels (NVIDIA) and others use AMD device plugin labels.
+        node_labels_map = node.metadata.labels or {}
+        for lk, lv in node_labels_map.items():
+            if not lv or not lv.strip():
+                continue
+            for fmt in LABEL_FORMATTER_REGISTRY:
+                if fmt.match_label_key(lk):
+                    accelerator_name = fmt.get_accelerator_from_label(lk, lv)
+                    break
+            if accelerator_name:
                 break
 
         # Extract IP address from node addresses (prefer external, fallback to internal)
@@ -5992,20 +6078,28 @@ def get_node_accelerator_count(context: Optional[str],
     """
     gpu_resource_name = (gpu_resource_key if gpu_resource_key is not None else
                          get_gpu_resource_key(context))
+    # In a mixed-vendor cluster (e.g. NVIDIA + AMD nodes) the context has a
+    # single default GPU resource key, but each node advertises its own
+    # vendor's key. Look for the default first, then any other supported GPU
+    # key, so nodes of the non-default vendor are not counted as having 0 GPUs.
+    node_gpu_resource_name = next(
+        (k for k in (gpu_resource_name, *SUPPORTED_GPU_RESOURCE_KEYS.values())
+         if k in attribute_dict), None)
     # A node is expected to advertise at most one accelerator family (GPU, TPU,
     # or Neuron). Rather than assert on external cluster state (which would crash
     # `sky status`/`show-gpus` if a node is misconfigured or in a transitional
     # hybrid state), warn and fall through to the first family found below.
     present_keys = [
-        k for k in (gpu_resource_name, TPU_RESOURCE_KEY, NEURON_RESOURCE_KEY)
-        if k in attribute_dict
+        k for k in (node_gpu_resource_name, TPU_RESOURCE_KEY,
+                    NEURON_RESOURCE_KEY)
+        if k is not None and k in attribute_dict
     ]
     if len(present_keys) > 1:
         logger.warning(
             f'Node advertises multiple accelerator families {present_keys}; '
             f'using {present_keys[0]}.')
-    if gpu_resource_name in attribute_dict:
-        return int(attribute_dict[gpu_resource_name])
+    if node_gpu_resource_name is not None:
+        return int(attribute_dict[node_gpu_resource_name])
     elif TPU_RESOURCE_KEY in attribute_dict:
         return int(attribute_dict[TPU_RESOURCE_KEY])
     elif NEURON_RESOURCE_KEY in attribute_dict:
@@ -6126,6 +6220,9 @@ def process_skypilot_pods(
         - List of KubernetesSkyPilotClusterInfo with job controller info.
         - List of KubernetesSkyPilotClusterInfo with serve controller info.
     """
+    # The GPU resource key and label formatter are read per pod, so the
+    # context is no longer needed here.
+    del context
     # pylint: disable=import-outside-toplevel
     from sky import resources as resources_lib
     clusters: Dict[str, KubernetesSkyPilotClusterInfo] = {}
@@ -6154,17 +6251,22 @@ def process_skypilot_pods(
             memory_request = parse_memory_resource(
                 (requests.get('memory', '0') if requests is not None else '0'),
                 unit='G')
-            gpu_count = parse_cpu_or_gpu_resource(
-                (requests.get(get_gpu_resource_key(context), '0')
-                 if requests is not None else '0'))
+            # Read the GPU count directly from whichever vendor key the pod
+            # actually requested. Avoid get_gpu_resource_key(context) which
+            # returns the cluster-wide default and picks the wrong vendor in
+            # mixed AMD + NVIDIA clusters (e.g. NVIDIA replica reads as 0).
+            gpu_count: Union[int, float] = 0
+            if requests is not None:
+                for pod_gpu_key in SUPPORTED_GPU_RESOURCE_KEYS.values():
+                    val = requests.get(pod_gpu_key)
+                    if val is not None:
+                        gpu_count = parse_cpu_or_gpu_resource(val)
+                        if gpu_count > 0:
+                            break
             gpu_name = None
             if gpu_count > 0:
-                label_formatter, _ = (detect_gpu_label_formatter(context))
-                assert label_formatter is not None, (
-                    'GPU label formatter cannot be None if there are pods '
-                    f'requesting GPUs: {pod.metadata.name}')
-                gpu_label = label_formatter.get_label_key()
-                # Get GPU name from pod node selector
+                # Get GPU name from pod node affinity expressions.
+                # Try all registered formatters to support mixed clusters.
                 node_selector_terms = (
                     pod.spec.affinity.node_affinity.
                     required_during_scheduling_ignored_during_execution.
@@ -6175,9 +6277,14 @@ def process_skypilot_pods(
                         if term.match_expressions:
                             expressions.extend(term.match_expressions)
                     for expression in expressions:
-                        if expression.key == gpu_label and expression.operator == 'In':
-                            gpu_name = label_formatter.get_accelerator_from_label_value(
-                                expression.values[0])
+                        if expression.operator != 'In':
+                            continue
+                        for fmt in LABEL_FORMATTER_REGISTRY:
+                            if fmt.match_label_key(expression.key):
+                                gpu_name = fmt.get_accelerator_from_label(
+                                    expression.key, expression.values[0])
+                                break
+                        if gpu_name:
                             break
 
             resources = resources_lib.Resources(
