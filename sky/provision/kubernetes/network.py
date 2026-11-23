@@ -340,8 +340,8 @@ def _query_ports_for_podip(
         provision_constants.TAG_RAY_CLUSTER_NAME: cluster_name_on_cloud,
         **provision_constants.HEAD_NODE_TAGS,
     }
-    head_pods = kubernetes_utils.filter_pods(namespace, context, tag_filters,
-                                             status_filters=['Running', 'Pending'])
+    head_pods = kubernetes_utils.filter_pods(
+        namespace, context, tag_filters, status_filters=['Running', 'Pending'])
     pod_ip = None
     for pod in head_pods.values():
         if pod.status.pod_ip is not None:
