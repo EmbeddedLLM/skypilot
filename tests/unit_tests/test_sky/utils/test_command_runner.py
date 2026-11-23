@@ -775,39 +775,82 @@ def test_kubernetes_runner_adds_container_flag_to_kubectl_exec() -> None:
     assert '-c ray-node' in captured['command']
 
 
-def test_kubernetes_runner_rsync_sets_exec_container_envvar() -> None:
+def _run_kubernetes_tar_rsync(source: str, target: str, **runner_kwargs):
+    """Runs KubernetesCommandRunner.rsync(up=True) with kubectl mocked out.
+
+    Returns the tar pipeline passed to run_with_log and the pre-flight
+    `kubectl exec ... mkdir` argv passed to subprocess.run.
+    """
     captured = {}
 
     def fake_run_with_log(command: str, *args, **kwargs):
         captured['command'] = command
         return 0, '', ''
 
+    def fake_subprocess_run(cmd, *args, **kwargs):
+        captured['mkdir'] = cmd
+        return mock.MagicMock(returncode=0, stdout='', stderr='')
+
     with mock.patch.object(command_runner.log_lib,
                            'run_with_log',
-                           side_effect=fake_run_with_log):
+                           side_effect=fake_run_with_log), \
+         mock.patch.object(command_runner.subprocess,
+                           'run',
+                           side_effect=fake_subprocess_run):
         runner = command_runner.KubernetesCommandRunner((('ns', 'ctx'), 'pod'),
-                                                        container='sidecar0')
-        runner.rsync('/tmp/src', '/tmp/dst', up=True, stream_logs=False)
-
-    assert 'SKYPILOT_K8S_EXEC_CONTAINER=sidecar0' in captured['command']
-    assert 'rsync' in captured['command']
+                                                        **runner_kwargs)
+        runner.rsync(source, target, up=True, stream_logs=False)
+    return captured['command'], captured['mkdir']
 
 
-def test_kubernetes_runner_rsync_does_not_set_exec_container_envvar_by_default(
-) -> None:
-    captured = {}
+def test_kubernetes_runner_rsync_targets_exec_container(tmp_path) -> None:
+    """The fork syncs with tar over kubectl exec; the container is passed to
+    kubectl with -c rather than through SKYPILOT_K8S_EXEC_CONTAINER."""
+    command, mkdir_cmd = _run_kubernetes_tar_rsync(str(tmp_path),
+                                                   '/tmp/dst',
+                                                   container='sidecar0')
 
-    def fake_run_with_log(command: str, *args, **kwargs):
-        captured['command'] = command
-        return 0, '', ''
+    assert '-c sidecar0' in command
+    assert mkdir_cmd[mkdir_cmd.index('-c') + 1] == 'sidecar0'
+    assert 'tar -cf -' in command and 'tar -xf -' in command
+    assert 'rsync' not in command.split()
+    assert command.startswith('KUBECTL_REMOTE_COMMAND_WEBSOCKETS=false ')
 
-    with mock.patch.object(command_runner.log_lib,
-                           'run_with_log',
-                           side_effect=fake_run_with_log):
-        runner = command_runner.KubernetesCommandRunner((('ns', 'ctx'), 'pod'))
-        runner.rsync('/tmp/src', '/tmp/dst', up=True, stream_logs=False)
 
-    assert 'SKYPILOT_K8S_EXEC_CONTAINER=' not in captured['command']
+def test_kubernetes_runner_rsync_does_not_target_container_by_default(
+        tmp_path) -> None:
+    command, mkdir_cmd = _run_kubernetes_tar_rsync(str(tmp_path), '/tmp/dst')
+
+    assert ' -c ' not in command.split(' -- ')[0].split('kubectl exec')[1]
+    assert '-c' not in mkdir_cmd[:mkdir_cmd.index('--')]
+
+
+def test_kubernetes_runner_rsync_directory_source(tmp_path) -> None:
+    """A directory source copies its contents into the target directory."""
+    command, mkdir_cmd = _run_kubernetes_tar_rsync(str(tmp_path), '/remote/dst')
+
+    sender, receiver = command.split(' | ')
+    assert sender.endswith(f'-C {tmp_path} .')
+    assert receiver.endswith('-C /remote/dst')
+    assert '--transform' not in receiver
+    assert mkdir_cmd[-1] == 'mkdir -p /remote/dst'
+
+
+def test_kubernetes_runner_rsync_file_source_renames_to_target(
+        tmp_path) -> None:
+    """A file source lands at the target path itself: it is extracted into the
+    target's parent and renamed, not placed inside a directory named after
+    the target."""
+    src = tmp_path / 'tmpabc'
+    src.write_text('x')
+    command, mkdir_cmd = _run_kubernetes_tar_rsync(str(src),
+                                                   '/remote/serve/config.yaml')
+
+    sender, receiver = command.split(' | ')
+    assert sender.endswith(f'-C {tmp_path} tmpabc')
+    assert '--transform=s/^tmpabc$/config.yaml/' in receiver
+    assert receiver.endswith('-C /remote/serve')
+    assert mkdir_cmd[-1] == 'mkdir -p /remote/serve'
 
 
 def test_get_pod_primary_container_prefers_ray_node() -> None:

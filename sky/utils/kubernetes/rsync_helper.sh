@@ -1,4 +1,19 @@
 #!/bin/bash
+# Force kubectl exec to use SPDY transport instead of WebSocket.
+#
+# WebSocket transport (default in newer kubectl) multiplexes stdin, stdout,
+# stderr, and ping/pong frames over a single HTTP/2 stream. On Ubuntu 26 /
+# kernel 6.8+, bidirectional rsync traffic fills the HTTP/2 receive window
+# faster than it drains; once the window is exhausted, ping frames can no
+# longer get through and the connection is killed (or wedges silently).
+# Reproduces at ~2-3 MB of bidirectional traffic in a `dd | kubectl exec
+# -i -- cat | wc -c` test.
+#
+# SPDY uses separate channels per stream (stdin/stdout/stderr) so a slow
+# reader on one channel doesn't starve the others. Forcing SPDY here fixes
+# rsync hangs during setup file_mounts and wheel propagation.
+export KUBECTL_REMOTE_COMMAND_WEBSOCKETS=false
+
 # We need to determine the pod, namespace and context from the args
 # For backward compatibility, we use + as the separator between namespace and context and add handling when context is not provided
 if [ "$1" = "-l" ]; then
@@ -56,24 +71,37 @@ else
     kubectl_cmd_base="kubectl exec \"$resource_type/$resource_name\" -n \"$namespace\" -c \"$container\" --context=\"$context\" --"
 fi
 
-# Execute command on remote pod, waiting for rsync to be available first.
-# The waiting happens on the remote pod, not locally, which is more efficient
-# and reliable than polling from the local machine.
-# We wrap the command in a bash script that waits for rsync, then execs the original command.
-# Timeout after MAX_WAIT_TIME_SECONDS seconds.
+# Wait for rsync to be available on the remote pod, then run the actual
+# rsync transfer.
+#
+# IMPORTANT: this is split into TWO separate `kubectl exec` invocations on
+# purpose. Doing the polling loop and the rsync data transfer in the same
+# kubectl exec session deadlocks on newer kernels (e.g. Ubuntu 26 / kernel
+# 6.8+) when the rsync payload is larger than the HTTP/2 receive window
+# (~a few MB): while the receiver bash sleeps in the polling loop instead
+# of reading stdin, the apiserver→kubelet HTTP/2 stream window fills up
+# and never recovers. Older kernels recovered from the window stall; newer
+# ones leave the stream wedged forever.
+#
+# The fix: do the wait without any stdin payload, then run the actual
+# transfer in a second exec where the receiver reads stdin immediately.
 MAX_WAIT_TIME_SECONDS=300
 MAX_WAIT_COUNT=$((MAX_WAIT_TIME_SECONDS * 2))
-# Use --norc --noprofile to prevent bash from sourcing startup files that might
-# output to stdout and corrupt the rsync protocol. All debug output must go to
-# stderr (>&2) to keep stdout clean for rsync communication.
+
+# Step 1: wait for rsync to be installed on the remote pod. No stdin
+# payload here, so the polling loop can sleep freely without stalling
+# any flow-control windows.
 #
 # Probe with `command -v`, not `which`: this runs INSIDE the pod, and minimal
 # non-Debian images (RHEL/UBI/Rocky) ship no `which` binary at all. With `which`
 # the condition can never become true even once rsync IS installed, so the loop
-# burned the full MAX_WAIT_TIME_SECONDS and then exit 1 -- which rsync reports as
-# `connection unexpectedly closed (0 bytes received)` / protocol error code 12,
-# under the misleading "Package installation may have failed" message. Retried
-# _MAX_RETRIES_FOR_RSYNC times, that hung `sky launch` for ~15 minutes on an
-# image where rsync was present the whole time. `command -v` is a POSIX shell
-# builtin and needs no package.
-eval "${kubectl_cmd_base% --} -i -- bash --norc --noprofile -c 'count=0; until command -v rsync >/dev/null 2>&1; do if [ \$count -ge $MAX_WAIT_COUNT ]; then echo \"Error when trying to rsync files to kubernetes cluster. Package installation may have failed.\" >&2; exit 1; fi; sleep 0.5; count=\$((count+1)); done; exec \"\$@\"' -- \"\$@\""
+# would burn the full MAX_WAIT_TIME_SECONDS and then exit 1. `command -v` is a
+# POSIX shell builtin and needs no package.
+eval "${kubectl_cmd_base% --} -- bash --norc --noprofile -c 'count=0; until command -v rsync >/dev/null 2>&1; do if [ \$count -ge $MAX_WAIT_COUNT ]; then echo \"Error when trying to rsync files to kubernetes cluster. Package installation may have failed.\" >&2; exit 1; fi; sleep 0.5; count=\$((count+1)); done'" || exit 1
+
+# Step 2: run the actual rsync command. Receiver starts reading stdin
+# immediately so the kubectl exec stream stays drained.
+# Use --norc --noprofile to prevent bash from sourcing startup files that
+# might output to stdout and corrupt the rsync protocol. All debug output
+# must go to stderr (>&2) to keep stdout clean for rsync communication.
+eval "${kubectl_cmd_base% --} -i -- \"\$@\""
