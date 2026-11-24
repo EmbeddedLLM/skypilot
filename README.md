@@ -226,9 +226,12 @@ lists the original `ellm-0.12.0` hashes and how the port differs from them.
             orphaned tail cannot hold the exec stream open after setup
             finishes.</li>
         </ul>
-        <em>Notes: file syncs log <code>[TAR-RSYNC-DEBUG]</code> lines at info
-        level. The tar path may not honour <code>!</code> negation patterns in
-        <code>.skyignore</code>, which upstream supports in its rsync path.</em>
+        <em>Notes: set <code>SKYPILOT_DEBUG_TAR_RSYNC=1</code> on the API
+        server to log each sync's tar pipeline with the
+        <code>[TAR-RSYNC-DEBUG]</code> tag (off by default; it was always on
+        in <code>ellm-0.12.0</code>). The tar path may not honour
+        <code>!</code> negation patterns in <code>.skyignore</code>, which
+        upstream supports in its rsync path.</em>
       </td>
     </tr>
     <tr>

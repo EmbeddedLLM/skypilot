@@ -2040,7 +2040,9 @@ class KubernetesCommandRunner(CommandRunner):
         Raises:
             exceptions.CommandError: tar/kubectl command failed.
         """
-        debug = os.environ.get('SKYPILOT_DEBUG_TAR_RSYNC') == '1' or True
+        # Verbose tracing of the tar pipeline is opt-in: set
+        # SKYPILOT_DEBUG_TAR_RSYNC=1 on the API server to enable it.
+        debug = os.environ.get('SKYPILOT_DEBUG_TAR_RSYNC') == '1'
         tag = '[TAR-RSYNC-DEBUG]'
 
         def dlog(msg: str) -> None:

@@ -853,6 +853,26 @@ def test_kubernetes_runner_rsync_file_source_renames_to_target(
     assert mkdir_cmd[-1] == 'mkdir -p /remote/serve'
 
 
+@pytest.mark.parametrize('env_value, expect_debug_logs', [(None, False),
+                                                          ('1', True)])
+def test_kubernetes_runner_rsync_debug_logging_is_opt_in(
+        tmp_path, monkeypatch, env_value, expect_debug_logs) -> None:
+    """[TAR-RSYNC-DEBUG] lines appear only with SKYPILOT_DEBUG_TAR_RSYNC=1."""
+    if env_value is None:
+        monkeypatch.delenv('SKYPILOT_DEBUG_TAR_RSYNC', raising=False)
+    else:
+        monkeypatch.setenv('SKYPILOT_DEBUG_TAR_RSYNC', env_value)
+
+    with mock.patch.object(command_runner.logger, 'info') as mock_info:
+        _run_kubernetes_tar_rsync(str(tmp_path), '/tmp/dst')
+
+    debug_lines = [
+        call for call in mock_info.call_args_list
+        if '[TAR-RSYNC-DEBUG]' in str(call)
+    ]
+    assert bool(debug_lines) == expect_debug_logs
+
+
 def test_get_pod_primary_container_prefers_ray_node() -> None:
     from sky.provision.kubernetes import utils as kubernetes_utils
 
