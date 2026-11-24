@@ -196,7 +196,7 @@ lists the original `ellm-0.12.0` hashes and how the port differs from them.
     </tr>
     <tr>
       <td><b>[Kubernetes] Sync files with tar over kubectl exec; fix exec stream hangs</b></td>
-      <td><code>0e5ec26</code></td>
+      <td><code>0e5ec26</code><br>(debug opt-in <code>06ac042</code>)</td>
       <td>
         <code>0e764fe</code>, <code>d5731f4</code>, <code>e3237a7</code>,
         <code>502df1c</code>, <code>4f1c887</code>, <code>175e866</code>
@@ -351,6 +351,7 @@ git cherry-pick 9e4b044  # Mixed NVIDIA + AMD GPU clusters
 git cherry-pick 183183b  # Intel GPU discovery (depends on 9e4b044)
 git cherry-pick 3ef5c8a  # Accept PEP 585 dict[K, V] in pod_config validator
 git cherry-pick 0e5ec26  # tar over kubectl exec; exec stream hang fixes
+git cherry-pick 06ac042  # Make tar-rsync debug logging opt-in (depends on 0e5ec26)
 git cherry-pick c322f1b  # Keep reused serve replicas routable
 git cherry-pick d24209c  # Publish branch wheels
 # Resolve any conflicts if upstream changed the same files, and check first
